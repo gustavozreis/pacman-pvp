@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="pt-pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Man 1v1 - Multiplayer Online</title>
+    <style>
+        :root {
+            --neon-blue: #1919a6;
+            --pac-yellow: #ffff00;
+            --ghost-red: #ff0000;
+            --bg-color: #050505;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: #fff;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            border: 4px solid var(--neon-blue);
+            box-shadow: 0 0 30px rgba(25, 25, 166, 0.6);
+            border-radius: 8px;
+        }
+
+        canvas { display: block; background: #000; }
+
+        #ui-top {
+            width: 100%;
+            max-width: 450px;
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            font-weight: bold;
+            color: var(--pac-yellow);
+        }
+
+        #profile-panel {
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px solid #333;
+            border-radius: 5px;
+            font-size: 12px;
+            background: rgba(255,255,255,0.05);
+            width: 450px;
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .stat-box { text-align: center; }
+        .stat-val { color: #00ff00; display: block; font-size: 16px; }
+
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            text-align: center;
+            padding: 20px;
+        }
+
+        #role-badge {
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            margin-bottom: 15px;
+            display: none;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .btn {
+            background: var(--neon-blue);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-top: 15px;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .btn:hover:not(:disabled) { background: #2a2abf; transform: scale(1.05); }
+        .btn:disabled { background: #444; cursor: not-allowed; opacity: 0.6; }
+
+        .info-footer {
+            margin-top: 15px;
+            font-size: 11px;
+            color: #666;
+            max-width: 300px;
+        }
+
+        #debug-console {
+            color: #ff4444;
+            font-size: 10px;
+            margin-top: 10px;
+            font-family: monospace;
+            max-width: 350px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-top">
+        <span>PONTOS: <span id="score">0</span></span>
+        <span id="match-status">DESLIGADO</span>
+    </div>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="overlay">
+            <div id="role-badge"></div>
+            <h1 id="status-title" style="color: var(--pac-yellow); margin: 0;">PAC-MAN PvP 1v1</h1>
+            <p id="status-desc" style="margin: 10px 0;">A ligar ao servidor...</p>
+            
+            <div id="room-box" style="margin-top: 10px; background: #111; padding: 15px; border-radius: 8px; border: 1px solid #222;">
+                <label style="font-size: 11px; color: #888;">CÓDIGO DA SALA (Igual em ambos):</label><br>
+                <input type="text" id="room-code" value="DUELO1" style="background: #000; border: 1px solid var(--neon-blue); color: #00ffff; padding: 8px; text-align: center; font-weight: bold; border-radius: 4px; margin-top: 5px; width: 180px;">
+                <br>
+                <button id="start-btn" class="btn" onclick="game.findMatch()" disabled>Entrar na Fila</button>
+            </div>
+
+            <div class="info-footer">
+                <div id="session-display">A aguardar login...</div>
+            </div>
+            <div id="debug-console"></div>
+        </div>
+    </div>
+
+    <div id="profile-panel">
+        <div class="stat-box">PAC-MAN <span class="stat-val" id="pac-wins">0V / 0D</span></div>
+        <div class="stat-box">FANTASMA <span class="stat-val" id="ghost-wins">0V / 0D</span></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+        // ---------------------------------------------------------
+        // CONFIGURAÇÃO FIREBASE DO UTILIZADOR
+        // ---------------------------------------------------------
+        const myFirebaseConfig = {
+            apiKey: "AIzaSyAUALVvZohsOibF3HI3PIIPorhkM4oRwlA",
+            authDomain: "multipac-46d8f.firebaseapp.com",
+            projectId: "multipac-46d8f",
+            storageBucket: "multipac-46d8f.firebasestorage.app",
+            messagingSenderId: "997293746778",
+            appId: "1:997293746778:web:7733c68dfba47ebc06c663",
+            measurementId: "G-VTDHG3JLG9"
+        };
+
+        const TILE_SIZE = 30;
+        const GRID_W = 15;
+        const GRID_H = 11;
+        
+        const FIXED_MAP = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,0,1,0,1,0,1,1,0,1],
+            [1,0,1,1,0,1,0,0,0,1,0,1,1,0,1],
+            [1,0,0,0,0,1,2,2,2,1,0,0,0,0,1],
+            [0,0,1,1,0,2,2,2,2,2,0,1,1,0,0], 
+            [1,0,0,0,0,1,0,0,0,1,0,0,0,0,1], 
+            [1,0,1,1,0,0,0,0,0,0,0,1,1,0,1],
+            [1,0,1,1,1,1,0,1,0,1,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        const SESSION_ID = "sess_" + Math.random().toString(36).substring(2, 7);
+
+        class Entity {
+            constructor(gx, gy, color, speed) {
+                this.x = gx * TILE_SIZE;
+                this.y = gy * TILE_SIZE;
+                this.color = color;
+                this.speed = speed;
+                this.dirX = 0; this.dirY = 0;
+                this.nextDirX = 0; this.nextDirY = 0;
+                this.targetX = this.x;
+                this.targetY = this.y;
+                this.radius = TILE_SIZE / 2 - 6; 
+            }
+            getGridX() { return Math.floor((this.x + TILE_SIZE / 2) / TILE_SIZE); }
+            getGridY() { return Math.floor((this.y + TILE_SIZE / 2) / TILE_SIZE); }
+            
+            isAtCenter() {
+                const cx = this.getGridX() * TILE_SIZE;
+                const cy = this.getGridY() * TILE_SIZE;
+                return Math.abs(this.x - cx) < this.speed && Math.abs(this.y - cy) < this.speed;
+            }
+
+            canMove(dx, dy) {
+                let nx = this.getGridX() + dx, ny = this.getGridY() + dy;
+                if (nx < 0 || nx >= GRID_W) return true; 
+                if (!game.map[ny]) return false;
+                return game.map[ny][nx] !== 1;
+            }
+        }
+
+        class Player extends Entity {
+            updateLocal() {
+                if (this.isAtCenter()) {
+                    this.x = this.getGridX() * TILE_SIZE;
+                    this.y = this.getGridY() * TILE_SIZE;
+                    if (this.canMove(this.nextDirX, this.nextDirY)) { 
+                        this.dirX = this.nextDirX; 
+                        this.dirY = this.nextDirY; 
+                    }
+                    if (!this.canMove(this.dirX, this.dirY)) { this.dirX = 0; this.dirY = 0; }
+                    
+                    if (game.role === 'pacman') {
+                        let gx = this.getGridX(), gy = this.getGridY();
+                        if(game.map[gy] && game.map[gy][gx] === 0) {
+                            game.map[gy][gx] = 2; game.dots--; game.score += 10;
+                            document.getElementById('score').innerText = game.score;
+                        }
+                    }
+                }
+                this.x += this.dirX * this.speed;
+                this.y += this.dirY * this.speed;
+                
+                if (this.x < -TILE_SIZE / 2) this.x = (GRID_W - 1) * TILE_SIZE;
+                else if (this.x > (GRID_W - 0.5) * TILE_SIZE) this.x = 0;
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                let rot = 0;
+                if (this.dirX === 1) rot = 0;
+                else if (this.dirX === -1) rot = Math.PI;
+                else if (this.dirY === 1) rot = Math.PI/2;
+                else if (this.dirY === -1) rot = -Math.PI/2;
+                ctx.moveTo(this.x + TILE_SIZE/2, this.y + TILE_SIZE/2);
+                ctx.arc(this.x + TILE_SIZE/2, this.y + TILE_SIZE/2, this.radius, rot + 0.2*Math.PI, rot + 1.8*Math.PI);
+                ctx.fill();
+            }
+
+            drawGhost(ctx) {
+                ctx.fillStyle = this.color;
+                const cx = this.x + TILE_SIZE/2, cy = this.y + TILE_SIZE/2;
+                ctx.beginPath(); ctx.arc(cx, cy, this.radius, Math.PI, 0);
+                ctx.lineTo(cx + this.radius, cy + this.radius - 2);
+                ctx.lineTo(cx - this.radius, cy + this.radius - 2);
+                ctx.fill();
+                ctx.fillStyle = "#fff"; ctx.beginPath();
+                ctx.arc(cx - 4, cy - 2, 3, 0, Math.PI*2); ctx.arc(cx + 4, cy - 2, 3, 0, Math.PI*2); ctx.fill();
+            }
+        }
+
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.canvas.width = GRID_W * TILE_SIZE;
+                this.canvas.height = GRID_H * TILE_SIZE;
+                this.map = []; this.pacman = null; this.ghost = null;
+                this.dots = 0; this.score = 0; this.user = null;
+                this.profile = { pacWins: 0, pacLosses: 0, ghostWins: 0, ghostLosses: 0 };
+                this.matchId = null; this.role = null;
+                this.matchUnsub = null; this.lastSync = 0;
+                this.db = null; this.appId = null; this.ended = false;
+            }
+
+            async init() {
+                const statusDesc = document.getElementById('status-desc');
+                const debugLog = document.getElementById('debug-console');
+                
+                try {
+                    const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : myFirebaseConfig;
+                    const firebaseApp = initializeApp(config);
+                    const auth = getAuth(firebaseApp);
+                    
+                    this.db = initializeFirestore(firebaseApp, { localCache: memoryLocalCache() });
+                    this.appId = typeof __app_id !== 'undefined' ? __app_id : 'multipac-independent-app';
+
+                    const login = async () => {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) 
+                            return await signInWithCustomToken(auth, __initial_auth_token);
+                        return await signInAnonymously(auth);
+                    };
+                    await login();
+
+                    onAuthStateChanged(auth, async (u) => {
+                        if (u) {
+                            this.user = u;
+                            document.getElementById('session-display').innerText = `O TEU ID: ${SESSION_ID}`;
+                            document.getElementById('start-btn').disabled = false;
+                            statusDesc.innerText = "Ligado ao servidor!";
+                            this.loadProfile();
+                        }
+                    });
+                } catch (e) {
+                    statusDesc.innerText = "Erro de Ligação";
+                    debugLog.innerText = e.message;
+                }
+            }
+
+            async loadProfile() {
+                try {
+                    const docRef = doc(this.db, 'artifacts', this.appId, 'users', this.user.uid, 'profile', 'stats');
+                    const snap = await getDoc(docRef);
+                    if (snap.exists()) { this.profile = snap.data(); this.updateProfileUI(); }
+                    else { await setDoc(docRef, this.profile); }
+                } catch (e) {}
+            }
+
+            updateProfileUI() {
+                document.getElementById('pac-wins').innerText = `${this.profile.pacWins}V / ${this.profile.pacLosses}D`;
+                document.getElementById('ghost-wins').innerText = `${this.profile.ghostWins}V / ${this.profile.ghostLosses}D`;
+            }
+
+            async findMatch() {
+                if (!this.db || !this.user) return;
+                const btn = document.getElementById('start-btn'), desc = document.getElementById('status-desc');
+                const roomCode = document.getElementById('room-code').value.trim();
+                btn.disabled = true; desc.innerText = "A procurar rivais..."; this.ended = false;
+
+                try {
+                    const ref = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'matches');
+                    const snap = await getDocs(ref);
+                    let found = null;
+                    snap.forEach((d) => {
+                        const data = d.data();
+                        if (data.status === 'waiting' && data.roomCode === roomCode && data.hostSession !== SESSION_ID) found = { id: d.id, ...data };
+                    });
+
+                    if (found) await this.joinMatch(found.id);
+                    else { 
+                        await new Promise(r => setTimeout(r, 400 + Math.random() * 500)); 
+                        await this.createMatch(roomCode); 
+                    }
+                } catch (e) { desc.innerText = "Erro ao entrar."; btn.disabled = false; }
+            }
+
+            async createMatch(roomCode) {
+                this.role = 'pacman'; this.matchId = "m_" + SESSION_ID;
+                const data = { 
+                    roomCode, hostSession: SESSION_ID, 
+                    status: 'waiting', 
+                    pacPos: { gx: 7, gy: 9, dx: 0, dy: 0 }, 
+                    ghostPos: { gx: 7, gy: 3, dx: 0, dy: 0 }, 
+                    dotsEaten: [], score: 0, 
+                    createdAt: serverTimestamp(), winner: null 
+                };
+                const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
+                await setDoc(mDoc, data); this.setupListener(mDoc);
+                document.getElementById('status-desc').innerText = "Sala criada. À espera de rival...";
+                this.showBadge();
+            }
+
+            async joinMatch(id) {
+                this.role = 'ghost'; this.matchId = id;
+                const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', id);
+                await updateDoc(mDoc, { player2: this.user.uid, guestSession: SESSION_ID, status: 'playing' });
+                this.setupListener(mDoc); this.showBadge();
+            }
+
+            showBadge() {
+                const b = document.getElementById('role-badge'); b.style.display = 'inline-block';
+                b.innerText = this.role === 'pacman' ? 'ÉS O PAC-MAN' : 'ÉS O FANTASMA';
+                b.style.background = this.role === 'pacman' ? 'var(--pac-yellow)' : 'var(--ghost-red)';
+                b.style.color = this.role === 'pacman' ? '#000' : '#fff';
+            }
+
+            setupListener(mDoc) {
+                if (this.matchUnsub) this.matchUnsub();
+                this.matchUnsub = onSnapshot(mDoc, (s) => {
+                    if (!s.exists()) return;
+                    const d = s.data();
+                    if (d.status === 'playing' && !this.pacman) this.startEngine();
+                    if (d.status === 'ended' && !this.ended) this.endEngine(d.winner);
+                    if (d.status !== 'playing' || !this.pacman || !this.ghost || this.ended) return;
+                    
+                    if (this.role === 'pacman' && d.ghostPos) { 
+                        this.ghost.targetX = d.ghostPos.gx * TILE_SIZE; 
+                        this.ghost.targetY = d.ghostPos.gy * TILE_SIZE; 
+                    } 
+                    else if (this.role === 'ghost' && d.pacPos) {
+                        this.pacman.targetX = d.pacPos.gx * TILE_SIZE; 
+                        this.pacman.targetY = d.pacPos.gy * TILE_SIZE;
+                        d.dotsEaten.forEach(idx => { 
+                            const y = Math.floor(idx / GRID_W), x = idx % GRID_W; 
+                            if (this.map[y][x] === 0) { this.map[y][x] = 2; this.dots--; } 
+                        });
+                        this.score = d.score; document.getElementById('score').innerText = this.score;
+                    }
+                });
+            }
+
+            startEngine() {
+                document.getElementById('overlay').style.display = 'none';
+                document.getElementById('match-status').innerText = "ONLINE"; 
+                document.getElementById('match-status').style.color = "#00ff00";
+                this.map = JSON.parse(JSON.stringify(FIXED_MAP)); this.dots = 0;
+                for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
+                this.pacman = new Player(7, 9, "#ffff00", 2.5); this.ghost = new Player(7, 3, "#ff0000", 2.5);
+                this.loop();
+            }
+
+            async sync() {
+                if (!this.matchId || Date.now() - this.lastSync < 80 || this.ended) return;
+                this.lastSync = Date.now();
+                const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
+                try {
+                    if (this.role === 'pacman') {
+                        const eaten = [];
+                        for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) 
+                            if (this.map[y][x] === 2 && FIXED_MAP[y][x] === 0) eaten.push(y * GRID_W + x);
+                        
+                        await updateDoc(mDoc, { 
+                            pacPos: { gx: this.pacman.getGridX(), gy: this.pacman.getGridY() }, 
+                            dotsEaten: eaten, 
+                            score: this.score 
+                        });
+                        if (this.dots <= 0) await updateDoc(mDoc, { status: 'ended', winner: 'pacman' });
+                    } else {
+                        await updateDoc(mDoc, { 
+                            ghostPos: { gx: this.ghost.getGridX(), gy: this.ghost.getGridY() } 
+                        });
+                        if (Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y) < TILE_SIZE * 0.75) 
+                            await updateDoc(mDoc, { status: 'ended', winner: 'ghost' });
+                    }
+                } catch(e) {}
+            }
+
+            async endEngine(winner) {
+                this.ended = true; 
+                const isWin = (this.role === winner);
+                document.getElementById('overlay').style.display = 'flex';
+                const st = document.getElementById('status-title');
+                const sd = document.getElementById('status-desc');
+                
+                st.innerText = isWin ? "VITÓRIA!" : "DERROTA";
+                st.style.color = isWin ? "#00ff00" : "#ff0000";
+                sd.innerText = winner === 'pacman' ? "O mapa foi limpo!" : "Foste capturado!";
+                
+                document.getElementById('start-btn').disabled = false; 
+                document.getElementById('start-btn').innerText = "Jogar de novo";
+                document.getElementById('match-status').innerText = "FIM";
+                
+                if (this.role === 'pacman') { if (isWin) this.profile.pacWins++; else this.profile.pacLosses++; }
+                else { if (isWin) this.profile.ghostWins++; else this.profile.ghostLosses++; }
+                
+                const dRef = doc(this.db, 'artifacts', this.appId, 'users', this.user.uid, 'profile', 'stats');
+                await setDoc(dRef, this.profile); this.updateProfileUI();
+                
+                if (this.matchUnsub) this.matchUnsub(); 
+                this.matchId = null; this.pacman = null; this.ghost = null;
+            }
+
+            update() {
+                if (!this.pacman || !this.ghost || this.ended) return;
+                if (this.role === 'pacman') {
+                    this.pacman.updateLocal();
+                    this.ghost.x += (this.ghost.targetX - this.ghost.x) * 0.25;
+                    this.ghost.y += (this.ghost.targetY - this.ghost.y) * 0.25;
+                } else {
+                    this.ghost.updateLocal();
+                    this.pacman.x += (this.pacman.targetX - this.pacman.x) * 0.25;
+                    this.pacman.y += (this.pacman.targetY - this.pacman.y) * 0.25;
+                }
+                this.sync();
+            }
+
+            draw() {
+                this.ctx.fillStyle = "#000"; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                for(let y=0; y<GRID_H; y++) {
+                    for(let x=0; x<GRID_W; x++) {
+                        const tx = x * TILE_SIZE, ty = y * TILE_SIZE;
+                        if(this.map[y][x] === 1) {
+                            this.ctx.strokeStyle = "#1919a6"; this.ctx.lineWidth = 2;
+                            this.ctx.strokeRect(tx+4, ty+4, TILE_SIZE-8, TILE_SIZE-8);
+                        } else if(this.map[y][x] === 0) {
+                            this.ctx.fillStyle = "#ffb8ae"; this.ctx.beginPath();
+                            this.ctx.arc(tx+TILE_SIZE/2, ty+TILE_SIZE/2, 2, 0, Math.PI*2); this.ctx.fill();
+                        }
+                    }
+                }
+                if (this.pacman) this.pacman.draw(this.ctx);
+                if (this.ghost) this.ghost.drawGhost(this.ctx);
+            }
+
+            loop() { if (this.ended) return; this.update(); this.draw(); requestAnimationFrame(() => this.loop()); }
+        }
+
+        const game = new Game(); window.game = game; game.init();
+
+        window.addEventListener('keydown', e => {
+            if(!game.pacman || !game.ghost || game.ended) return;
+            const t = game.role === 'pacman' ? game.pacman : game.ghost;
+            if(e.key === "ArrowUp") { t.nextDirY = -1; t.nextDirX = 0; }
+            if(e.key === "ArrowDown") { t.nextDirY = 1; t.nextDirX = 0; }
+            if(e.key === "ArrowLeft") { t.nextDirX = -1; t.nextDirY = 0; }
+            if(e.key === "ArrowRight") { t.nextDirX = 1; t.nextDirY = 0; }
+        });
+    </script>
+</body>
+</html>
