@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pac-Man PvP - Matchmaking Automático</title>
     <style>
+        /* CONFIGURAÇÕES VISUAIS (CSS) */
         :root {
             --neon-blue: #1919a6;
             --pac-yellow: #ffff00;
@@ -34,6 +35,7 @@
 
         canvas { display: block; background: #000; }
 
+        /* HUD Superior (Pontos e Status) */
         #ui-top {
             width: 100%;
             max-width: 450px;
@@ -44,6 +46,7 @@
             color: var(--pac-yellow);
         }
 
+        /* Camada de Overlay (Menu, Fim de Jogo, Busca de Partida) */
         #overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -73,6 +76,7 @@
         .btn:hover:not(:disabled) { background: #2a2abf; transform: scale(1.05); }
         .btn:disabled { background: #444; cursor: not-allowed; opacity: 0.6; }
 
+        /* Indicador de Papel (Pac-man ou Fantasma) */
         #role-badge {
             padding: 8px 20px;
             border-radius: 20px;
@@ -84,6 +88,7 @@
 
         #status-desc { margin: 15px 0; color: #aaa; }
         
+        /* Animação de Carregamento */
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid var(--neon-blue);
@@ -123,12 +128,13 @@
     </div>
 
     <script type="module">
+        // Importação dos módulos do Firebase via CDN (Sem necessidade de Node.js/NPM)
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, getDocs, serverTimestamp, query, where, limit } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         // ---------------------------------------------------------
-        // CONFIGURAÇÃO FIREBASE
+        // CONFIGURAÇÃO DO SEU PROJETO FIREBASE
         // ---------------------------------------------------------
         const firebaseConfig = {
             apiKey: "AIzaSyAUALVvZohsOibF3HI3PIIPorhkM4oRwlA",
@@ -139,17 +145,19 @@
             appId: "1:997293746778:web:7733c68dfba47ebc06c663"
         };
 
-        const TILE_SIZE = 30;
-        const GRID_W = 15;
-        const GRID_H = 11;
+        // CONSTANTES DO JOGO
+        const TILE_SIZE = 30; // Tamanho de cada quadrado no mapa (píxeis)
+        const GRID_W = 15;    // Largura total do mapa em blocos
+        const GRID_H = 11;    // Altura total do mapa em blocos
         
+        // ESTRUTURA DO MAPA: 1 = Parede, 0 = Pastilha/Caminho, 2 = Vazio (Comido)
         const FIXED_MAP = [
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
             [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
             [1,0,1,1,0,1,0,1,0,1,0,1,1,0,1],
             [1,0,1,1,0,1,0,0,0,1,0,1,1,0,1],
-            [1,0,0,0,0,1,2,2,2,1,0,0,0,0,1],
-            [0,0,1,1,0,2,2,2,2,2,0,1,1,0,0], 
+            [1,0,0,0,0,1,2,2,2,1,0,0,0,0,1], // Spawn do Fantasma (Meio)
+            [0,0,1,1,0,2,2,2,2,2,0,1,1,0,0], // Túnel de Teleporte
             [1,0,0,0,0,1,0,0,0,1,0,0,0,0,1], 
             [1,0,1,1,0,0,0,0,0,0,0,1,1,0,1],
             [1,0,1,1,1,1,0,1,0,1,1,1,1,0,1],
@@ -157,50 +165,66 @@
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
         ];
 
+        // ID único desta aba para evitar conflito caso o mesmo usuário jogue contra si mesmo em duas abas
         const SESSION_ID = "p_" + Math.random().toString(36).substring(2, 7);
 
+        /**
+         * CLASSE BASE DE ENTIDADES (Pac-man e Fantasma)
+         * Contém a lógica de física e colisão comum a ambos.
+         */
         class Entity {
             constructor(gx, gy, color, speed) {
-                this.x = gx * TILE_SIZE; this.y = gy * TILE_SIZE;
-                this.color = color; this.speed = speed;
-                this.dirX = 0; this.dirY = 0;
-                this.nextDirX = 0; this.nextDirY = 0;
-                this.targetX = this.x; this.targetY = this.y;
+                this.x = gx * TILE_SIZE; 
+                this.y = gy * TILE_SIZE;
+                this.color = color; 
+                this.speed = speed;
+                this.dirX = 0; this.dirY = 0;           // Direção atual do movimento
+                this.nextDirX = 0; this.nextDirY = 0;   // Próxima direção (buffer de comando)
+                this.targetX = this.x; this.targetY = this.y; // Coordenadas para interpolação multiplayer
                 this.radius = TILE_SIZE / 2 - 6; 
             }
-            getGridX() { return Math.floor((this.x + TILE_SIZE / 2) / TILE_SIZE); }
-            getGridY() { return Math.floor((this.y + TILE_SIZE / 2) / TILE_SIZE); }
+
+            // Converte posição X em píxeis para coluna na grelha
+            getGridX() { return Math.round(this.x / TILE_SIZE); }
+            // Converte posição Y em píxeis para linha na grelha
+            getGridY() { return Math.round(this.y / TILE_SIZE); }
             
-            // Verifica se estamos em um cruzamento (centro do bloco)
+            // Verifica se o personagem está no centro de um bloco (momento de virar)
             isAtJunction() {
-                const threshold = this.speed - 0.1;
-                return Math.abs(this.x % TILE_SIZE) <= threshold && Math.abs(this.y % TILE_SIZE) <= threshold;
+                return Math.abs(this.x % TILE_SIZE) < this.speed && Math.abs(this.y % TILE_SIZE) < this.speed;
             }
 
+            // Verifica se a movimentação para determinada direção é permitida (sem paredes)
             canMove(dx, dy) {
-                let nx = this.getGridX() + dx, ny = this.getGridY() + dy;
+                let nx = this.getGridX() + dx;
+                let ny = this.getGridY() + dy;
+                // Permite sair das laterais do mapa (Túnel)
                 if (nx < 0 || nx >= GRID_W) return true; 
                 if (!FIXED_MAP[ny]) return false;
+                // 1 é Parede
                 return FIXED_MAP[ny][nx] !== 1;
             }
         }
 
+        /**
+         * CLASSE DO JOGADOR
+         * Estende Entity e adiciona lógica de controle local e regras de jogo (comer pastilhas).
+         */
         class Player extends Entity {
             updateLocal() {
-                // Se estamos perto de uma junção, podemos decidir virar ou parar
+                // Lógica de decisão de movimento só ocorre em junções
                 if (this.isAtJunction()) {
-                    // Tenta virar para a direção desejada (buffer de input)
+                    // Tenta virar para a direção que o usuário apertou
                     if (this.canMove(this.nextDirX, this.nextDirY)) {
-                        // Só alinha ao centro se estiver a mudar de direção ou a começar
                         if (this.nextDirX !== this.dirX || this.nextDirY !== this.dirY) {
-                            this.x = this.getGridX() * TILE_SIZE;
+                            this.x = this.getGridX() * TILE_SIZE; // Snap ao grid para alinhar a curva
                             this.y = this.getGridY() * TILE_SIZE;
                             this.dirX = this.nextDirX;
                             this.dirY = this.nextDirY;
                         }
                     }
                     
-                    // Se não pode continuar na direção atual, para e alinha
+                    // Se a direção atual for bloqueada, para e alinha
                     if (!this.canMove(this.dirX, this.dirY)) {
                         this.x = this.getGridX() * TILE_SIZE;
                         this.y = this.getGridY() * TILE_SIZE;
@@ -208,25 +232,28 @@
                         this.dirY = 0;
                     }
 
-                    // Lógica de comer (apenas Pac-Man)
+                    // Se eu for o Pac-man, verifico se comi uma bolinha
                     if (game.role === 'pacman') {
                         let gx = this.getGridX(), gy = this.getGridY();
                         if(game.map[gy] && game.map[gy][gx] === 0) {
-                            game.map[gy][gx] = 2; game.dots--; game.score += 10;
+                            game.map[gy][gx] = 2; // 2 = Vazio
+                            game.dots--;          // Diminui contagem total do mapa
+                            game.score += 10;
                             document.getElementById('score').innerText = game.score;
                         }
                     }
                 }
 
-                // Incrementa a posição
+                // Move o personagem
                 this.x += this.dirX * this.speed;
                 this.y += this.dirY * this.speed;
                 
-                // Teleporte lateral
+                // LÓGICA DO TÚNEL (TELEPORTE LATERAL)
                 if (this.x < -TILE_SIZE / 2) this.x = (GRID_W - 1) * TILE_SIZE;
                 else if (this.x > (GRID_W - 0.5) * TILE_SIZE) this.x = 0;
             }
 
+            // Desenho do Pac-man com boca animada simples
             draw(ctx) {
                 ctx.fillStyle = this.color; ctx.beginPath();
                 let rot = 0;
@@ -237,6 +264,7 @@
                 ctx.fill();
             }
 
+            // Desenho do Fantasma
             drawGhost(ctx) {
                 ctx.fillStyle = this.color;
                 const cx = this.x + TILE_SIZE/2, cy = this.y + TILE_SIZE/2;
@@ -244,28 +272,43 @@
                 ctx.lineTo(cx + this.radius, cy + this.radius - 2);
                 ctx.lineTo(cx - this.radius, cy + this.radius - 2);
                 ctx.fill();
+                // Olhos
                 ctx.fillStyle = "#fff"; ctx.beginPath();
                 ctx.arc(cx - 4, cy - 2, 3, 0, Math.PI*2); ctx.arc(cx + 4, cy - 2, 3, 0, Math.PI*2); ctx.fill();
             }
         }
 
+        /**
+         * MOTOR PRINCIPAL DO JOGO (GAME ENGINE)
+         * Gerencia Firestore, Matchmaking e o Game Loop.
+         */
         class Game {
             constructor() {
                 this.canvas = document.getElementById('gameCanvas');
                 this.ctx = this.canvas.getContext('2d');
                 this.canvas.width = GRID_W * TILE_SIZE;
                 this.canvas.height = GRID_H * TILE_SIZE;
-                this.map = []; this.pacman = null; this.ghost = null;
-                this.dots = 0; this.score = 0; this.user = null;
-                this.matchId = null; this.role = null;
-                this.matchUnsub = null; this.lastSync = 0;
-                this.db = null; this.appId = "multipac-v2"; this.ended = false;
+                this.map = [];          // Cópia local do mapa que será alterada (bolinhas sumindo)
+                this.pacman = null;     // Instância da classe Player
+                this.ghost = null;      // Instância da classe Player
+                this.dots = 0;          // Contador de bolinhas restantes
+                this.score = 0; 
+                this.user = null;       // Dados do usuário do Firebase
+                this.matchId = null;    // ID do documento da partida atual no Firestore
+                this.role = null;       // 'pacman' ou 'ghost'
+                this.matchUnsub = null; // Função para cancelar o listener do Firestore
+                this.lastSync = 0;      // Controle de FPS da rede (sync rate)
+                this.db = null; 
+                this.appId = "multipac-v2"; // Caminho base no Firestore
+                this.ended = false;     // trava para fim de jogo
             }
 
+            // Inicialização do Firebase e Autenticação Anônima
             async init() {
                 try {
                     const firebaseApp = initializeApp(firebaseConfig);
                     const auth = getAuth(firebaseApp);
+                    // Uso de cache em memória para performance em jogos
                     this.db = initializeFirestore(firebaseApp, { localCache: memoryLocalCache() });
 
                     await signInAnonymously(auth);
@@ -277,13 +320,16 @@
                             document.getElementById('status-desc').innerText = "Servidor pronto. Clique para jogar.";
                         }
                     });
-                } catch (e) { console.error(e); }
+                } catch (e) { console.error("Falha ao iniciar Firebase:", e); }
             }
 
+            /**
+             * LÓGICA DE MATCHMAKING (Busca de partidas)
+             */
             async startMatchmaking() {
                 document.getElementById('start-btn').disabled = true;
                 document.getElementById('match-loader').style.display = 'block';
-                document.getElementById('status-desc').innerText = "Procurando oponente disponível...";
+                document.getElementById('status-desc').innerText = "Buscando oponente disponível...";
                 this.ended = false;
 
                 try {
@@ -291,6 +337,7 @@
                     const snap = await getDocs(matchesRef);
                     let availableMatch = null;
 
+                    // Procura na lista de partidas alguém que está em 'waiting' (espera)
                     snap.forEach(d => {
                         const data = d.data();
                         if (data.status === 'waiting' && data.player1 !== this.user.uid) {
@@ -298,8 +345,13 @@
                         }
                     });
 
-                    if (availableMatch) await this.joinMatch(availableMatch.id);
-                    else await this.createMatch();
+                    if (availableMatch) {
+                        // Se encontrou alguém esperando, entra na partida dele
+                        await this.joinMatch(availableMatch.id);
+                    } else {
+                        // Se não encontrou, cria a sua própria sala de espera
+                        await this.createMatch();
+                    }
                 } catch (e) {
                     console.error(e);
                     document.getElementById('status-desc').innerText = "Erro ao conectar.";
@@ -307,6 +359,7 @@
                 }
             }
 
+            // Cria um novo documento de partida
             async createMatch() {
                 this.matchId = "match_" + Math.random().toString(36).substring(2, 9);
                 const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
@@ -316,25 +369,28 @@
                     player2: null,
                     status: 'waiting',
                     createdAt: serverTimestamp(),
-                    pacPos: { gx: 7, gy: 9 },
-                    ghostPos: { gx: 7, gy: 3 },
-                    dotsEaten: [],
+                    pacPos: { x: 7 * TILE_SIZE, y: 9 * TILE_SIZE }, // Spawn padrão Pac-man
+                    ghostPos: { x: 7 * TILE_SIZE, y: 3 * TILE_SIZE }, // Spawn padrão Fantasma
+                    dotsEaten: [], // Array para sincronizar bolinhas comidas
                     score: 0
                 });
 
-                this.setupListener(mDoc);
-                document.getElementById('status-desc').innerText = "Aguardando oponente entrar...";
+                this.setupListener(mDoc); // Começa a ouvir mudanças no documento
+                document.getElementById('status-desc').innerText = "Sala criada. Aguardando oponente entrar...";
             }
 
+            // Entra numa partida existente e SORTEIA OS PAPÉIS
             async joinMatch(id) {
                 this.matchId = id;
                 const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', id);
+                
+                // SORTEIO ALEATÓRIO: 50% de chance para cada um ser Fantasma/Pac-man
                 const p1IsPacman = Math.random() > 0.5;
-                this.role = p1IsPacman ? 'ghost' : 'pacman';
+                this.role = p1IsPacman ? 'ghost' : 'pacman'; // Eu sou o P2, o inverso do P1
 
                 await updateDoc(mDoc, {
                     player2: this.user.uid,
-                    status: 'playing',
+                    status: 'playing', // Ao mudar para playing, o Host (P1) vai detectar e iniciar o jogo
                     p1Role: p1IsPacman ? 'pacman' : 'ghost',
                     p2Role: p1IsPacman ? 'ghost' : 'pacman'
                 });
@@ -342,41 +398,46 @@
                 this.setupListener(mDoc);
             }
 
+            /**
+             * LISTENER EM TEMPO REAL (Ouvindo o oponente)
+             */
             setupListener(mDoc) {
                 if (this.matchUnsub) this.matchUnsub();
                 this.matchUnsub = onSnapshot(mDoc, (s) => {
                     if (!s.exists()) return;
                     const d = s.data();
 
+                    // Define papel do Jogador 1 (Host) após o sorteio feito pelo Jogador 2
                     if (this.role === null && d.status === 'playing') {
                         this.role = (d.player1 === this.user.uid) ? d.p1Role : d.p2Role;
                         this.showBadge();
                     }
 
+                    // Gatilhos de estado do jogo
                     if (d.status === 'playing' && !this.pacman) this.startEngine();
                     if (d.status === 'ended' && !this.ended) this.endEngine(d.winner);
                     
                     if (d.status !== 'playing' || !this.pacman || !this.ghost) return;
 
-                    // CORREÇÃO: Lógica Anti-Slide no Teletransporte
-                    const applyPosition = (entity, targetGX, targetGY) => {
-                        const targetX = targetGX * TILE_SIZE;
-                        const targetY = targetGY * TILE_SIZE;
-                        const dist = Math.hypot(entity.x - targetX, entity.y - targetY);
-                        
+                    // SINCRONIZAÇÃO DE POSIÇÕES POR PÍXEIS (Movimento Suave)
+                    const syncRemote = (entity, remotePos) => {
+                        // Se a distância for muito grande (Teleporte), move instantaneamente
+                        const dist = Math.hypot(entity.x - remotePos.x, entity.y - remotePos.y);
                         if (dist > TILE_SIZE * 3) {
-                            entity.x = targetX;
-                            entity.y = targetY;
+                            entity.x = remotePos.x;
+                            entity.y = remotePos.y;
                         }
-                        entity.targetX = targetX;
-                        entity.targetY = targetY;
+                        // Define o alvo para a interpolação suave no update()
+                        entity.targetX = remotePos.x;
+                        entity.targetY = remotePos.y;
                     };
 
                     if (this.role === 'pacman' && d.ghostPos) {
-                        applyPosition(this.ghost, d.ghostPos.gx, d.ghostPos.gy);
+                        syncRemote(this.ghost, d.ghostPos);
                     } else if (this.role === 'ghost' && d.pacPos) {
-                        applyPosition(this.pacman, d.pacPos.gx, d.pacPos.gy);
+                        syncRemote(this.pacman, d.pacPos);
                         
+                        // Fantasma sincroniza bolinhas comidas pelo Pac-man para o mapa ficar igual
                         d.dotsEaten.forEach(idx => {
                             const y = Math.floor(idx / GRID_W), x = idx % GRID_W;
                             if (this.map[y][x] === 0) { this.map[y][x] = 2; this.dots--; }
@@ -387,6 +448,7 @@
                 });
             }
 
+            // Exibe visualmente qual o seu papel
             showBadge() {
                 const b = document.getElementById('role-badge');
                 b.style.display = 'inline-block';
@@ -395,6 +457,7 @@
                 b.style.color = this.role === 'pacman' ? '#000' : '#fff';
             }
 
+            // Inicia o motor gráfico e lógicas de movimentação
             startEngine() {
                 document.getElementById('overlay').style.display = 'none';
                 document.getElementById('match-loader').style.display = 'none';
@@ -405,34 +468,45 @@
                 this.dots = 0;
                 for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
                 
-                this.pacman = new Player(7, 9, "#ffff00", 2.0);
-                this.ghost = new Player(7, 3, "#ff0000", 2.0); 
+                // Velocidade 2.5 é um divisor perfeito de 30 (TILE_SIZE), evitando bugs de colisão
+                this.pacman = new Player(7, 9, "#ffff00", 2.5);
+                this.ghost = new Player(7, 3, "#ff0000", 2.5); 
                 this.loop();
             }
 
+            /**
+             * SINCRONIZAÇÃO DE ENVIO (Upload de dados)
+             */
             async sync() {
                 if (!this.matchId || Date.now() - this.lastSync < 80 || this.ended) return;
                 this.lastSync = Date.now();
                 const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
                 try {
                     if (this.role === 'pacman') {
+                        // Pac-man envia sua posição e lista de bolinhas que comeu
                         const eaten = [];
                         for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) 
                             if (this.map[y][x] === 2 && FIXED_MAP[y][x] === 0) eaten.push(y * GRID_W + x);
                         
                         await updateDoc(mDoc, {
-                            pacPos: { gx: this.pacman.getGridX(), gy: this.pacman.getGridY() },
+                            pacPos: { x: this.pacman.x, y: this.pacman.y },
                             dotsEaten: eaten, score: this.score
                         });
+                        // Condição de Vitória do Pac-man
                         if (this.dots <= 0) await updateDoc(mDoc, { status: 'ended', winner: 'pacman' });
                     } else {
-                        await updateDoc(mDoc, { ghostPos: { gx: this.ghost.getGridX(), gy: this.ghost.getGridY() } });
+                        // Fantasma envia apenas sua posição
+                        await updateDoc(mDoc, { 
+                            ghostPos: { x: this.ghost.x, y: this.ghost.y } 
+                        });
+                        // Verificação de Colisão/Captura (Feita no computador do Fantasma)
                         const dist = Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y);
-                        if (dist < TILE_SIZE * 0.7) await updateDoc(mDoc, { status: 'ended', winner: 'ghost' });
+                        if (dist < TILE_SIZE * 0.75) await updateDoc(mDoc, { status: 'ended', winner: 'ghost' });
                     }
                 } catch(e) {}
             }
 
+            // Lógica de encerramento de partida
             async endEngine(winner) {
                 this.ended = true;
                 const isWin = (this.role === winner);
@@ -448,45 +522,59 @@
                 this.matchId = null; this.pacman = null; this.ghost = null; this.role = null;
             }
 
+            /**
+             * GAME LOOP: ATUALIZAÇÃO E DESENHO
+             */
             update() {
                 if (!this.pacman || !this.ghost || this.ended) return;
+                
                 if (this.role === 'pacman') {
                     this.pacman.updateLocal();
-                    this.ghost.x += (this.ghost.targetX - this.ghost.x) * 0.25;
-                    this.ghost.y += (this.ghost.targetY - this.ghost.y) * 0.25;
+                    // INTERPOLAÇÃO: Move o oponente suavemente em direção ao alvo recebido da rede
+                    this.ghost.x += (this.ghost.targetX - this.ghost.x) * 0.3;
+                    this.ghost.y += (this.ghost.targetY - this.ghost.y) * 0.3;
                 } else {
                     this.ghost.updateLocal();
-                    this.pacman.x += (this.pacman.targetX - this.pacman.x) * 0.25;
-                    this.pacman.y += (this.pacman.targetY - this.pacman.y) * 0.25;
+                    this.pacman.x += (this.pacman.targetX - this.pacman.x) * 0.3;
+                    this.pacman.y += (this.pacman.targetY - this.pacman.y) * 0.3;
                 }
                 this.sync();
             }
 
             draw() {
                 this.ctx.fillStyle = "#000"; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                // Desenha o Mapa
                 for(let y=0; y<GRID_H; y++) {
                     for(let x=0; x<GRID_W; x++) {
                         const tx = x * TILE_SIZE, ty = y * TILE_SIZE;
-                        if(FIXED_MAP[y][x] === 1) {
+                        if(FIXED_MAP[y][x] === 1) { // Parede
                             this.ctx.strokeStyle = "#1919a6"; this.ctx.lineWidth = 2;
                             this.ctx.strokeRect(tx+4, ty+4, TILE_SIZE-8, TILE_SIZE-8);
-                        } else if(this.map[y][x] === 0) {
+                        } else if(this.map[y][x] === 0) { // Pastilha
                             this.ctx.fillStyle = "#ffb8ae"; this.ctx.beginPath();
                             this.ctx.arc(tx+TILE_SIZE/2, ty+TILE_SIZE/2, 2, 0, Math.PI*2); this.ctx.fill();
                         }
                     }
                 }
+                // Desenha as Entidades
                 if (this.pacman) this.pacman.draw(this.ctx);
                 if (this.ghost) this.ghost.drawGhost(this.ctx);
             }
 
-            loop() { if (this.ended) return; this.update(); this.draw(); requestAnimationFrame(() => this.loop()); }
+            loop() { 
+                if (this.ended) return; 
+                this.update(); 
+                this.draw(); 
+                requestAnimationFrame(() => this.loop()); 
+            }
         }
 
+        // INSTÂNCIA GLOBAL DO JOGO
         const game = new Game();
         window.game = game;
         game.init();
 
+        // CAPTURA DE TECLADO
         window.addEventListener('keydown', e => {
             if(!game.pacman || !game.ghost || game.ended) return;
             const t = game.role === 'pacman' ? game.pacman : game.ghost;
