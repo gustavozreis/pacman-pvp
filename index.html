@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pac-Man PvP - Matchmaking + IA</title>
+    <title>Pac-Man PvP - Versão Final Estável</title>
     <style>
-        /* CONFIGURAÇÕES VISUAIS (CSS) */
         :root {
             --neon-blue: #1919a6;
             --pac-yellow: #ffff00;
@@ -35,7 +34,6 @@
 
         canvas { display: block; background: #000; }
 
-        /* HUD Superior (Pontos e Status) */
         #ui-top {
             width: 100%;
             max-width: 450px;
@@ -46,7 +44,6 @@
             color: var(--pac-yellow);
         }
 
-        /* Camada de Overlay (Menu, Fim de Jogo, Busca de Partida) */
         #overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -76,7 +73,6 @@
         .btn:hover:not(:disabled) { background: #2a2abf; transform: scale(1.05); }
         .btn:disabled { background: #444; cursor: not-allowed; opacity: 0.6; }
 
-        /* Indicador de Papel (Pac-man ou Fantasma) */
         #role-badge {
             padding: 8px 20px;
             border-radius: 20px;
@@ -89,7 +85,6 @@
         #status-desc { margin: 15px 0; color: #aaa; }
         #matchmaking-timer { color: #00ffff; font-weight: bold; font-size: 18px; margin-top: 10px; }
         
-        /* Animação de Carregamento */
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid var(--neon-blue);
@@ -121,7 +116,7 @@
             
             <button id="start-btn" class="btn" onclick="game.startMatchmaking()" disabled>PROCURAR PARTIDA</button>
             <div id="match-loader" class="loader"></div>
-            <div id="matchmaking-timer" style="display: none;">Aguardando oponente: <span id="timer-val">10</span>s</div>
+            <div id="matchmaking-timer" style="display: none;">Aguardando oponente: <span id="timer-val">5</span>s</div>
 
             <div style="margin-top: 30px; font-size: 10px; color: #444;">
                 ID SESSÃO: <span id="session-id">...</span>
@@ -130,14 +125,10 @@
     </div>
 
     <script type="module">
-        // Importação dos módulos do Firebase
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, getDocs, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
-        // ---------------------------------------------------------
-        // CONFIGURAÇÃO DO SEU PROJETO FIREBASE
-        // ---------------------------------------------------------
         const firebaseConfig = {
             apiKey: "AIzaSyAUALVvZohsOibF3HI3PIIPorhkM4oRwlA",
             authDomain: "multipac-46d8f.firebaseapp.com",
@@ -175,7 +166,6 @@
                 this.speed = speed;
                 this.dirX = 0; this.dirY = 0;
                 this.nextDirX = 0; this.nextDirY = 0;
-                this.targetX = this.x; this.targetY = this.y;
                 this.radius = TILE_SIZE / 2 - 6; 
             }
 
@@ -183,15 +173,32 @@
             getGridY() { return Math.round(this.y / TILE_SIZE); }
             
             isAtJunction() {
-                return Math.abs(this.x % TILE_SIZE) < this.speed && Math.abs(this.y % TILE_SIZE) < this.speed;
+                const centerX = this.getGridX() * TILE_SIZE;
+                const centerY = this.getGridY() * TILE_SIZE;
+                const dist = Math.hypot(this.x - centerX, this.y - centerY);
+                const near = dist < this.speed;
+                if (near) { // SNAP: Alinha perfeitamente ao centro para decisões
+                    this.x = centerX;
+                    this.y = centerY;
+                }
+                return near;
             }
 
             canMove(dx, dy) {
-                let nx = this.getGridX() + dx;
-                let ny = this.getGridY() + dy;
-                if (nx < 0 || nx >= GRID_W) return true; 
-                if (!FIXED_MAP[ny]) return false;
+                if (dx === 0 && dy === 0) return true;
+                const gx = this.getGridX();
+                const gy = this.getGridY();
+                const nx = gx + dx;
+                const ny = gy + dy;
+                if (nx < 0 || nx >= GRID_W) return gy === 5; 
+                if (ny < 0 || ny >= GRID_H) return false;
                 return FIXED_MAP[ny][nx] !== 1;
+            }
+
+            handleTeleport() {
+                const mapWidth = GRID_W * TILE_SIZE;
+                if (this.x < -TILE_SIZE / 2) this.x = mapWidth - TILE_SIZE / 2;
+                else if (this.x > mapWidth - TILE_SIZE / 2) this.x = -TILE_SIZE / 2;
             }
         }
 
@@ -199,19 +206,11 @@
             updateLocal() {
                 if (this.isAtJunction()) {
                     if (this.canMove(this.nextDirX, this.nextDirY)) {
-                        if (this.nextDirX !== this.dirX || this.nextDirY !== this.dirY) {
-                            this.x = this.getGridX() * TILE_SIZE;
-                            this.y = this.getGridY() * TILE_SIZE;
-                            this.dirX = this.nextDirX;
-                            this.dirY = this.nextDirY;
-                        }
+                        this.dirX = this.nextDirX; this.dirY = this.nextDirY;
+                    } else if (!this.canMove(this.dirX, this.dirY)) {
+                        this.dirX = 0; this.dirY = 0;
                     }
-                    if (!this.canMove(this.dirX, this.dirY)) {
-                        this.x = this.getGridX() * TILE_SIZE;
-                        this.y = this.getGridY() * TILE_SIZE;
-                        this.dirX = 0;
-                        this.dirY = 0;
-                    }
+
                     if (game.role === 'pacman') {
                         let gx = this.getGridX(), gy = this.getGridY();
                         if(game.map[gy] && game.map[gy][gx] === 0) {
@@ -222,102 +221,97 @@
                 }
                 this.x += this.dirX * this.speed;
                 this.y += this.dirY * this.speed;
-                
-                // TELEPORTE: Trata o movimento através do túnel
-                if (this.x < -TILE_SIZE / 2) this.x = (GRID_W - 1) * TILE_SIZE;
-                else if (this.x > (GRID_W - 0.5) * TILE_SIZE) this.x = 0;
+                this.handleTeleport();
             }
 
-            /**
-             * IA DO FANTASMA (BOT)
-             * Ajustada para ignorar decisões complexas dentro do túnel.
-             */
-            updateGhostAI(target) {
-                // TRAVA DE TÚNEL: Se estiver saindo do mapa, continua reto
-                if (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE) {
-                    this.x += this.dirX * this.speed;
-                    return;
+            // Garante que o Bot respeite a física sem parar em locais errados
+            applyBotMovement() {
+                if (this.dirX !== 0) this.dirY = 0;
+                if (this.dirY !== 0) this.dirX = 0;
+                
+                // Só pára se realmente bater numa parede num cruzamento
+                if (this.isAtJunction() && !this.canMove(this.dirX, this.dirY)) {
+                    this.dirX = 0; this.dirY = 0;
                 }
 
-                if (this.isAtJunction()) {
-                    this.x = this.getGridX() * TILE_SIZE;
-                    this.y = this.getGridY() * TILE_SIZE;
-                    
+                this.x += this.dirX * this.speed;
+                this.y += this.dirY * this.speed;
+                this.handleTeleport();
+            }
+
+            getSmartDist(x1, x2, y1, y2) {
+                let dx = Math.abs(x1 - x2);
+                const mapWidth = GRID_W * TILE_SIZE;
+                if (dx > mapWidth / 2) dx = mapWidth - dx;
+                const dy = Math.abs(y1 - y2);
+                return Math.sqrt(dx*dx + dy*dy);
+            }
+
+            updateGhostAI(target) {
+                if (!target) return;
+                const gx = this.getGridX(), gy = this.getGridY();
+                const inTunnelWrap = (gy === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
+
+                if (!inTunnelWrap && this.isAtJunction()) {
                     const dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
                     let bestDir = null;
                     let minDist = Infinity;
 
                     dirs.forEach(d => {
-                        if (d.x === -this.dirX && d.y === -this.dirY) return;
+                        if (d.x === -this.dirX && d.y === -this.dirY && this.dirX !== 0) return;
                         if (this.canMove(d.x, d.y)) {
-                            const nextX = (this.getGridX() + d.x) * TILE_SIZE;
-                            const nextY = (this.getGridY() + d.y) * TILE_SIZE;
-                            const dist = Math.hypot(nextX - target.x, nextY - target.y);
+                            const dX = (gx + d.x) * TILE_SIZE, dY = (gy + d.y) * TILE_SIZE;
+                            const dist = this.getSmartDist(dX, target.x, dY, target.y);
                             if (dist < minDist) { minDist = dist; bestDir = d; }
                         }
                     });
 
                     if (bestDir) { this.dirX = bestDir.x; this.dirY = bestDir.y; }
-                    else { this.dirX *= -1; this.dirY *= -1; }
+                    else {
+                        const fallback = dirs.find(d => this.canMove(d.x, d.y));
+                        if(fallback) { this.dirX = fallback.x; this.dirY = fallback.y; }
+                    }
                 }
-                this.x += this.dirX * this.speed;
-                this.y += this.dirY * this.speed;
+                this.applyBotMovement();
             }
 
-            /**
-             * IA DO PAC-MAN (BOT)
-             * Ajustada para evitar stutter no túnel.
-             */
             updatePacmanAI(danger) {
-                // TRAVA DE TÚNEL: Se estiver em zona de teleporte, não recalcula
-                if (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE) {
-                    this.x += this.dirX * this.speed;
-                    // Lógica de comer bolinhas ainda funciona no túnel
-                    let gx = this.getGridX(), gy = this.getGridY();
-                    if(gx >= 0 && gx < GRID_W && game.map[gy][gx] === 0) {
-                        game.map[gy][gx] = 2; game.dots--; game.score += 10;
-                        document.getElementById('score').innerText = game.score;
-                    }
-                    return;
-                }
+                if (!danger) return;
+                const gx = this.getGridX(), gy = this.getGridY();
+                const inTunnelWrap = (gy === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
 
-                if (this.isAtJunction()) {
-                    this.x = this.getGridX() * TILE_SIZE;
-                    this.y = this.getGridY() * TILE_SIZE;
-
+                if (!inTunnelWrap && this.isAtJunction()) {
                     const dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
                     let bestDir = null;
                     let maxScore = -Infinity;
 
                     dirs.forEach(d => {
                         if (this.canMove(d.x, d.y)) {
-                            const nx = this.getGridX() + d.x;
-                            const ny = this.getGridY() + d.y;
+                            const nx = gx + d.x, ny = gy + d.y;
+                            const distToGhost = this.getSmartDist(nx * TILE_SIZE, danger.x, ny * TILE_SIZE, danger.y);
+                            const hasDot = (ny >= 0 && ny < GRID_H && nx >= 0 && nx < GRID_W) && game.map[ny][nx] === 0;
                             
-                            // Fugir do perigo e procurar comida
-                            const distToDanger = Math.hypot(nx*TILE_SIZE - danger.x, ny*TILE_SIZE - danger.y);
-                            // Previne erro ao ler mapa fora dos limites
-                            const safeNX = Math.max(0, Math.min(GRID_W - 1, nx));
-                            const hasDot = game.map[ny][safeNX] === 0 ? 50 : 0;
-                            const score = distToDanger + hasDot;
+                            let score = distToGhost;
+                            if (hasDot) score += (game.dots < 5 ? 5000 : 1500);
+                            if (d.x === this.dirX && d.y === this.dirY) score += 300;
 
                             if (score > maxScore) { maxScore = score; bestDir = d; }
                         }
                     });
 
                     if (bestDir) { this.dirX = bestDir.x; this.dirY = bestDir.y; }
-
-                    let gx = this.getGridX(), gy = this.getGridY();
-                    if(game.map[gy][gx] === 0) {
-                        game.map[gy][gx] = 2; game.dots--; game.score += 10;
-                        document.getElementById('score').innerText = game.score;
+                    else {
+                        const force = dirs.find(d => this.canMove(d.x, d.y));
+                        if(force) { this.dirX = force.x; this.dirY = force.y; }
                     }
                 }
-                this.x += this.dirX * this.speed;
-                this.y += this.dirY * this.speed;
-                
-                if (this.x < -TILE_SIZE / 2) this.x = (GRID_W - 1) * TILE_SIZE;
-                else if (this.x > (GRID_W - 0.5) * TILE_SIZE) this.x = 0;
+
+                const cgx = this.getGridX(), cgy = this.getGridY();
+                if(cgy >= 0 && cgy < GRID_H && cgx >= 0 && cgx < GRID_W && game.map[cgy][cgx] === 0) {
+                    game.map[cgy][cgx] = 2; game.dots--; game.score += 10;
+                    document.getElementById('score').innerText = game.score;
+                }
+                this.applyBotMovement();
             }
 
             draw(ctx) {
@@ -363,14 +357,13 @@
                     const firebaseApp = initializeApp(firebaseConfig);
                     const auth = getAuth(firebaseApp);
                     this.db = initializeFirestore(firebaseApp, { localCache: memoryLocalCache() });
-
                     await signInAnonymously(auth);
                     onAuthStateChanged(auth, (u) => {
                         if (u) {
                             this.user = u;
                             document.getElementById('session-id').innerText = SESSION_ID;
                             document.getElementById('start-btn').disabled = false;
-                            document.getElementById('status-desc').innerText = "Servidor pronto. Clique para jogar.";
+                            document.getElementById('status-desc').innerText = "Servidor pronto.";
                         }
                     });
                 } catch (e) { console.error(e); }
@@ -380,39 +373,25 @@
                 document.getElementById('start-btn').disabled = true;
                 document.getElementById('match-loader').style.display = 'block';
                 document.getElementById('matchmaking-timer').style.display = 'block';
-                document.getElementById('status-desc').innerText = "Procurando oponente humano...";
+                document.getElementById('status-desc').innerText = "Procurando oponente...";
                 this.ended = false; this.isBotMatch = false;
-
-                let timeLeft = 10;
+                let timeLeft = 5;
                 document.getElementById('timer-val').innerText = timeLeft;
-
                 this.matchmakingTimer = setInterval(() => {
-                    timeLeft--;
-                    document.getElementById('timer-val').innerText = timeLeft;
-                    if (timeLeft <= 0) {
-                        clearInterval(this.matchmakingTimer);
-                        this.startBotMatch();
-                    }
+                    timeLeft--; document.getElementById('timer-val').innerText = timeLeft;
+                    if (timeLeft <= 0) { clearInterval(this.matchmakingTimer); this.startBotMatch(); }
                 }, 1000);
 
                 try {
                     const matchesRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'matches');
                     const snap = await getDocs(matchesRef);
                     let availableMatch = null;
-
                     snap.forEach(d => {
                         const data = d.data();
-                        if (data.status === 'waiting' && data.player1 !== this.user.uid) {
-                            availableMatch = { id: d.id, ...data };
-                        }
+                        if (data.status === 'waiting' && data.player1 !== this.user.uid) availableMatch = { id: d.id, ...data };
                     });
-
-                    if (availableMatch) {
-                        clearInterval(this.matchmakingTimer);
-                        await this.joinMatch(availableMatch.id);
-                    } else {
-                        await this.createMatch();
-                    }
+                    if (availableMatch) { clearInterval(this.matchmakingTimer); await this.joinMatch(availableMatch.id); }
+                    else await this.createMatch();
                 } catch (e) { console.error(e); }
             }
 
@@ -420,10 +399,21 @@
                 if (this.matchUnsub) this.matchUnsub();
                 if (this.matchId) {
                     const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
-                    await deleteDoc(mDoc);
+                    await deleteDoc(mDoc).catch(()=>{});
                 }
                 this.isBotMatch = true; this.matchId = null;
                 this.role = Math.random() > 0.5 ? 'pacman' : 'ghost';
+                
+                this.map = JSON.parse(JSON.stringify(FIXED_MAP));
+                this.dots = 0;
+                for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
+                
+                this.pacman = new Player(7, 9, "#ffff00", 3.0);
+                this.ghost = new Player(7, 3, "#ff0000", 2.5); 
+                
+                if (this.role === 'pacman') { this.ghost.dirX = -1; this.ghost.dirY = 0; } 
+                else { this.pacman.dirX = 1; this.pacman.dirY = 0; }
+
                 this.showBadge();
                 this.startEngine();
             }
@@ -433,8 +423,8 @@
                 const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
                 await setDoc(mDoc, {
                     player1: this.user.uid, player2: null, status: 'waiting',
-                    createdAt: serverTimestamp(), pacPos: { x: 7 * TILE_SIZE, y: 9 * TILE_SIZE },
-                    ghostPos: { x: 7 * TILE_SIZE, y: 3 * TILE_SIZE }, dotsEaten: [], score: 0
+                    createdAt: serverTimestamp(), pacPos: { gx: 7, gy: 9 },
+                    ghostPos: { gx: 7, gy: 3 }, dotsEaten: [], score: 0
                 });
                 this.setupListener(mDoc);
             }
@@ -442,12 +432,8 @@
             async joinMatch(id) {
                 this.matchId = id;
                 const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', id);
-                const p1IsPacman = Math.random() > 0.5;
-                this.role = p1IsPacman ? 'ghost' : 'pacman';
-                await updateDoc(mDoc, {
-                    player2: this.user.uid, status: 'playing',
-                    p1Role: p1IsPacman ? 'pacman' : 'ghost', p2Role: p1IsPacman ? 'ghost' : 'pacman'
-                });
+                this.role = 'ghost';
+                await updateDoc(mDoc, { player2: this.user.uid, status: 'playing' });
                 this.setupListener(mDoc);
             }
 
@@ -456,44 +442,31 @@
                 this.matchUnsub = onSnapshot(mDoc, (s) => {
                     if (!s.exists()) return;
                     const d = s.data();
-
-                    if (this.role === null && d.status === 'playing') {
-                        clearInterval(this.matchmakingTimer);
-                        this.role = (d.player1 === this.user.uid) ? d.p1Role : d.p2Role;
-                        this.showBadge();
-                    }
-
                     if (d.status === 'playing' && !this.pacman) {
-                        clearInterval(this.matchmakingTimer);
+                        this.role = (d.player1 === this.user.uid) ? 'pacman' : 'ghost';
                         this.startEngine();
                     }
                     if (d.status === 'ended' && !this.ended) this.endEngine(d.winner);
-                    
                     if (d.status !== 'playing' || !this.pacman || !this.ghost || this.isBotMatch) return;
 
-                    const syncRemote = (entity, remotePos) => {
-                        const dist = Math.hypot(entity.x - remotePos.x, entity.y - remotePos.y);
-                        if (dist > TILE_SIZE * 3) { entity.x = remotePos.x; entity.y = remotePos.y; }
-                        entity.targetX = remotePos.x; entity.targetY = remotePos.y;
-                    };
-
-                    if (this.role === 'pacman' && d.ghostPos) syncRemote(this.ghost, d.ghostPos);
-                    else if (this.role === 'ghost' && d.pacPos) {
-                        syncRemote(this.pacman, d.pacPos);
+                    if (this.role === 'pacman' && d.ghostPos) {
+                        this.ghost.x += (d.ghostPos.gx * TILE_SIZE - this.ghost.x) * 0.3;
+                        this.ghost.y += (d.ghostPos.gy * TILE_SIZE - this.ghost.y) * 0.3;
+                    } else if (this.role === 'ghost' && d.pacPos) {
+                        this.pacman.x += (d.pacPos.gx * TILE_SIZE - this.pacman.x) * 0.3;
+                        this.pacman.y += (d.pacPos.gy * TILE_SIZE - this.pacman.y) * 0.3;
                         d.dotsEaten.forEach(idx => {
                             const y = Math.floor(idx / GRID_W), x = idx % GRID_W;
                             if (this.map[y][x] === 0) { this.map[y][x] = 2; this.dots--; }
                         });
-                        this.score = d.score;
-                        document.getElementById('score').innerText = this.score;
+                        this.score = d.score; document.getElementById('score').innerText = this.score;
                     }
-                });
+                }, () => {});
             }
 
             showBadge() {
-                const b = document.getElementById('role-badge');
-                b.style.display = 'inline-block';
-                b.innerText = (this.role === 'pacman' ? 'VOCÊ É O PAC-MAN' : 'VOCÊ É O FANTASMA') + (this.isBotMatch ? " (VS BOT)" : "");
+                const b = document.getElementById('role-badge'); b.style.display = 'inline-block';
+                b.innerText = (this.role === 'pacman' ? 'ÉS O PAC-MAN' : 'ÉS O FANTASMA') + (this.isBotMatch ? " (BOT)" : "");
                 b.style.background = this.role === 'pacman' ? 'var(--pac-yellow)' : 'var(--ghost-red)';
                 b.style.color = this.role === 'pacman' ? '#000' : '#fff';
             }
@@ -502,43 +475,38 @@
                 document.getElementById('overlay').style.display = 'none';
                 document.getElementById('match-loader').style.display = 'none';
                 document.getElementById('matchmaking-timer').style.display = 'none';
-                document.getElementById('match-status').innerText = this.isBotMatch ? "TREINO (BOT)" : "LIVE (PVP)";
+                document.getElementById('match-status').innerText = this.isBotMatch ? "MODO TREINO" : "LIVE PVP";
                 document.getElementById('match-status').style.color = "#00ff00";
                 
-                this.map = JSON.parse(JSON.stringify(FIXED_MAP));
-                this.dots = 0;
-                for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
-                
-                // MUDANÇA DE VELOCIDADE: Pac-Man (2.5) e Fantasma (2.25)
-                // O Fantasma agora corre a 90% da velocidade do Pac-Man para aumentar o desafio.
-                this.pacman = new Player(7, 9, "#ffff00", 2.5);
-                this.ghost = new Player(7, 3, "#ff0000", 2.25); 
+                if (!this.pacman) {
+                    this.map = JSON.parse(JSON.stringify(FIXED_MAP));
+                    this.dots = 0;
+                    for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
+                    this.pacman = new Player(7, 9, "#ffff00", 3.0);
+                    this.ghost = new Player(7, 3, "#ff0000", 2.5);
+                }
                 this.loop();
             }
 
             async sync() {
+                if (!this.pacman || !this.ghost || this.ended) return;
                 if (this.isBotMatch) {
                     if (this.dots <= 0) this.endEngine('pacman');
                     const dist = Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y);
                     if (dist < TILE_SIZE * 0.75) this.endEngine('ghost');
                     return;
                 }
-                if (!this.matchId || Date.now() - this.lastSync < 80 || this.ended) return;
+                if (!this.matchId || Date.now() - this.lastSync < 80) return;
                 this.lastSync = Date.now();
                 const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
                 try {
                     if (this.role === 'pacman') {
                         const eaten = [];
-                        for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) 
-                            if (this.map[y][x] === 2 && FIXED_MAP[y][x] === 0) eaten.push(y * GRID_W + x);
-                        
-                        await updateDoc(mDoc, {
-                            pacPos: { x: this.pacman.x, y: this.pacman.y },
-                            dotsEaten: eaten, score: this.score
-                        });
+                        for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if (this.map[y][x] === 2 && FIXED_MAP[y][x] === 0) eaten.push(y * GRID_W + x);
+                        await updateDoc(mDoc, { pacPos: { gx: this.pacman.getGridX(), gy: this.pacman.getGridY() }, dotsEaten: eaten, score: this.score });
                         if (this.dots <= 0) await updateDoc(mDoc, { status: 'ended', winner: 'pacman' });
                     } else {
-                        await updateDoc(mDoc, { ghostPos: { x: this.ghost.x, y: this.ghost.y } });
+                        await updateDoc(mDoc, { ghostPos: { gx: this.ghost.getGridX(), gy: this.ghost.getGridY() } });
                         const dist = Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y);
                         if (dist < TILE_SIZE * 0.75) await updateDoc(mDoc, { status: 'ended', winner: 'ghost' });
                     }
@@ -546,37 +514,27 @@
             }
 
             async endEngine(winner) {
-                this.ended = true;
-                const isWin = (this.role === winner);
+                if (this.ended) return;
+                this.ended = true; const isWin = (this.role === winner);
                 document.getElementById('overlay').style.display = 'flex';
                 document.getElementById('status-title').innerText = isWin ? "VITÓRIA!" : "DERROTA";
                 document.getElementById('status-title').style.color = isWin ? "#00ff00" : "#ff0000";
-                document.getElementById('status-desc').innerText = winner === 'pacman' ? "O labirinto foi limpo!" : "O fantasma capturou a presa!";
+                document.getElementById('status-desc').innerText = winner === 'pacman' ? "Mapa limpo!" : "Capturado!";
                 document.getElementById('start-btn').disabled = false;
                 document.getElementById('start-btn').innerText = "JOGAR NOVAMENTE";
                 document.getElementById('match-status').innerText = "FIM";
-                
                 if (this.matchUnsub) this.matchUnsub();
-                this.matchId = null; this.pacman = null; this.ghost = null; this.role = null;
+                this.matchId = null; this.pacman = null; this.ghost = null;
             }
 
             update() {
                 if (!this.pacman || !this.ghost || this.ended) return;
-                
                 if (this.role === 'pacman') {
                     this.pacman.updateLocal();
                     if (this.isBotMatch) this.ghost.updateGhostAI(this.pacman);
-                    else {
-                        this.ghost.x += (this.ghost.targetX - this.ghost.x) * 0.3;
-                        this.ghost.y += (this.ghost.targetY - this.ghost.y) * 0.3;
-                    }
                 } else {
                     this.ghost.updateLocal();
                     if (this.isBotMatch) this.pacman.updatePacmanAI(this.ghost);
-                    else {
-                        this.pacman.x += (this.pacman.targetX - this.pacman.x) * 0.3;
-                        this.pacman.y += (this.pacman.targetY - this.pacman.y) * 0.3;
-                    }
                 }
                 this.sync();
             }
@@ -602,26 +560,13 @@
             loop() { if (this.ended) return; this.update(); this.draw(); requestAnimationFrame(() => this.loop()); }
         }
 
-        const game = new Game();
-        window.game = game;
-        game.init();
+        const game = new Game(); window.game = game; game.init();
 
-        // CONTROLES: Suporte para Setas e WASD
         window.addEventListener('keydown', e => {
             if(!game.pacman || !game.ghost || game.ended) return;
-            const t = game.role === 'pacman' ? game.pacman : game.ghost;
-            
-            const key = e.key.toLowerCase();
-            let captured = true;
-
-            if(key === "arrowup" || key === "w") { t.nextDirY = -1; t.nextDirX = 0; }
-            else if(key === "arrowdown" || key === "s") { t.nextDirY = 1; t.nextDirX = 0; }
-            else if(key === "arrowleft" || key === "a") { t.nextDirX = -1; t.nextDirY = 0; }
-            else if(key === "arrowright" || key === "d") { t.nextDirX = 1; t.nextDirY = 0; }
-            else { captured = false; }
-
-            // Previne scroll da página se for uma tecla de jogo
-            if(captured) e.preventDefault();
+            const t = (game.role === 'pacman') ? game.pacman : game.ghost;
+            const keys = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0], w: [0,-1], s: [0,1], a: [-1,0], d: [1,0] };
+            if(keys[e.key]) { [t.nextDirX, t.nextDirY] = keys[e.key]; e.preventDefault(); }
         });
     </script>
 </body>
