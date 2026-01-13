@@ -509,9 +509,10 @@
                 this.dots = 0;
                 for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
                 
-                // MUDANÇA DE VELOCIDADE: Pac-Man (2.5) > Fantasma (2.0) conforme original
+                // MUDANÇA DE VELOCIDADE: Pac-Man (2.5) e Fantasma (2.25)
+                // O Fantasma agora corre a 90% da velocidade do Pac-Man para aumentar o desafio.
                 this.pacman = new Player(7, 9, "#ffff00", 2.5);
-                this.ghost = new Player(7, 3, "#ff0000", 2.0); 
+                this.ghost = new Player(7, 3, "#ff0000", 2.25); 
                 this.loop();
             }
 
