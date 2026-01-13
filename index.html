@@ -143,7 +143,6 @@
         const GRID_W = 15;
         const GRID_H = 11;
         
-        // Mapa revisado para garantir corredores centrais abertos (coluna 7 e 8)
         const FIXED_MAP = [
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
             [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
@@ -172,16 +171,14 @@
             getGridX() { return Math.floor((this.x + TILE_SIZE / 2) / TILE_SIZE); }
             getGridY() { return Math.floor((this.y + TILE_SIZE / 2) / TILE_SIZE); }
             
-            // Verificação de centro mais tolerante para evitar travamentos
-            isAtCenter() {
-                const cx = this.getGridX() * TILE_SIZE;
-                const cy = this.getGridY() * TILE_SIZE;
-                return Math.abs(this.x - cx) <= this.speed && Math.abs(this.y - cy) <= this.speed;
+            // Verifica se estamos em um cruzamento (centro do bloco)
+            isAtJunction() {
+                const threshold = this.speed - 0.1;
+                return Math.abs(this.x % TILE_SIZE) <= threshold && Math.abs(this.y % TILE_SIZE) <= threshold;
             }
 
             canMove(dx, dy) {
                 let nx = this.getGridX() + dx, ny = this.getGridY() + dy;
-                // Tunel (saídas laterais)
                 if (nx < 0 || nx >= GRID_W) return true; 
                 if (!FIXED_MAP[ny]) return false;
                 return FIXED_MAP[ny][nx] !== 1;
@@ -190,20 +187,28 @@
 
         class Player extends Entity {
             updateLocal() {
-                if (this.isAtCenter()) {
-                    // Alinhamento forçado ao grid para precisão na curva
-                    this.x = this.getGridX() * TILE_SIZE;
-                    this.y = this.getGridY() * TILE_SIZE;
-
+                // Se estamos perto de uma junção, podemos decidir virar ou parar
+                if (this.isAtJunction()) {
+                    // Tenta virar para a direção desejada (buffer de input)
                     if (this.canMove(this.nextDirX, this.nextDirY)) {
-                        this.dirX = this.nextDirX;
-                        this.dirY = this.nextDirY;
+                        // Só alinha ao centro se estiver a mudar de direção ou a começar
+                        if (this.nextDirX !== this.dirX || this.nextDirY !== this.dirY) {
+                            this.x = this.getGridX() * TILE_SIZE;
+                            this.y = this.getGridY() * TILE_SIZE;
+                            this.dirX = this.nextDirX;
+                            this.dirY = this.nextDirY;
+                        }
                     }
+                    
+                    // Se não pode continuar na direção atual, para e alinha
                     if (!this.canMove(this.dirX, this.dirY)) {
+                        this.x = this.getGridX() * TILE_SIZE;
+                        this.y = this.getGridY() * TILE_SIZE;
                         this.dirX = 0;
                         this.dirY = 0;
                     }
-                    
+
+                    // Lógica de comer (apenas Pac-Man)
                     if (game.role === 'pacman') {
                         let gx = this.getGridX(), gy = this.getGridY();
                         if(game.map[gy] && game.map[gy][gx] === 0) {
@@ -212,13 +217,16 @@
                         }
                     }
                 }
+
+                // Incrementa a posição
                 this.x += this.dirX * this.speed;
                 this.y += this.dirY * this.speed;
                 
-                // Teleporte lateral (Pac-Man e Fantasma)
+                // Teleporte lateral
                 if (this.x < -TILE_SIZE / 2) this.x = (GRID_W - 1) * TILE_SIZE;
                 else if (this.x > (GRID_W - 0.5) * TILE_SIZE) this.x = 0;
             }
+
             draw(ctx) {
                 ctx.fillStyle = this.color; ctx.beginPath();
                 let rot = 0;
@@ -228,6 +236,7 @@
                 ctx.arc(this.x + TILE_SIZE/2, this.y + TILE_SIZE/2, this.radius, rot + 0.2*Math.PI, rot + 1.8*Math.PI);
                 ctx.fill();
             }
+
             drawGhost(ctx) {
                 ctx.fillStyle = this.color;
                 const cx = this.x + TILE_SIZE/2, cy = this.y + TILE_SIZE/2;
@@ -356,7 +365,6 @@
                         const dist = Math.hypot(entity.x - targetX, entity.y - targetY);
                         
                         if (dist > TILE_SIZE * 3) {
-                            // Se a distância for muito grande, teletransporta instantaneamente
                             entity.x = targetX;
                             entity.y = targetY;
                         }
@@ -397,8 +405,8 @@
                 this.dots = 0;
                 for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
                 
-                this.pacman = new Player(7, 9, "#ffff00", 2.5);
-                this.ghost = new Player(7, 3, "#ff0000", 2.5); // Velocidades iguais e divisoras de TILE_SIZE
+                this.pacman = new Player(7, 9, "#ffff00", 2.0);
+                this.ghost = new Player(7, 3, "#ff0000", 2.0); 
                 this.loop();
             }
 
@@ -444,12 +452,12 @@
                 if (!this.pacman || !this.ghost || this.ended) return;
                 if (this.role === 'pacman') {
                     this.pacman.updateLocal();
-                    this.ghost.x += (this.ghost.targetX - this.ghost.x) * 0.3;
-                    this.ghost.y += (this.ghost.targetY - this.ghost.y) * 0.3;
+                    this.ghost.x += (this.ghost.targetX - this.ghost.x) * 0.25;
+                    this.ghost.y += (this.ghost.targetY - this.ghost.y) * 0.25;
                 } else {
                     this.ghost.updateLocal();
-                    this.pacman.x += (this.pacman.targetX - this.pacman.x) * 0.3;
-                    this.pacman.y += (this.pacman.targetY - this.pacman.y) * 0.3;
+                    this.pacman.x += (this.pacman.targetX - this.pacman.x) * 0.25;
+                    this.pacman.y += (this.pacman.targetY - this.pacman.y) * 0.25;
                 }
                 this.sync();
             }
