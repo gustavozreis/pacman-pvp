@@ -143,6 +143,7 @@
         const GRID_W = 15;
         const GRID_H = 11;
         
+        // Mapa revisado para garantir corredores centrais abertos (coluna 7 e 8)
         const FIXED_MAP = [
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
             [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
@@ -170,13 +171,17 @@
             }
             getGridX() { return Math.floor((this.x + TILE_SIZE / 2) / TILE_SIZE); }
             getGridY() { return Math.floor((this.y + TILE_SIZE / 2) / TILE_SIZE); }
+            
+            // Verificação de centro mais tolerante para evitar travamentos
             isAtCenter() {
                 const cx = this.getGridX() * TILE_SIZE;
                 const cy = this.getGridY() * TILE_SIZE;
-                return Math.abs(this.x - cx) < this.speed && Math.abs(this.y - cy) < this.speed;
+                return Math.abs(this.x - cx) <= this.speed && Math.abs(this.y - cy) <= this.speed;
             }
+
             canMove(dx, dy) {
                 let nx = this.getGridX() + dx, ny = this.getGridY() + dy;
+                // Tunel (saídas laterais)
                 if (nx < 0 || nx >= GRID_W) return true; 
                 if (!FIXED_MAP[ny]) return false;
                 return FIXED_MAP[ny][nx] !== 1;
@@ -186,10 +191,18 @@
         class Player extends Entity {
             updateLocal() {
                 if (this.isAtCenter()) {
+                    // Alinhamento forçado ao grid para precisão na curva
                     this.x = this.getGridX() * TILE_SIZE;
                     this.y = this.getGridY() * TILE_SIZE;
-                    if (this.canMove(this.nextDirX, this.nextDirY)) { this.dirX = this.nextDirX; this.dirY = this.nextDirY; }
-                    if (!this.canMove(this.dirX, this.dirY)) { this.dirX = 0; this.dirY = 0; }
+
+                    if (this.canMove(this.nextDirX, this.nextDirY)) {
+                        this.dirX = this.nextDirX;
+                        this.dirY = this.nextDirY;
+                    }
+                    if (!this.canMove(this.dirX, this.dirY)) {
+                        this.dirX = 0;
+                        this.dirY = 0;
+                    }
                     
                     if (game.role === 'pacman') {
                         let gx = this.getGridX(), gy = this.getGridY();
@@ -201,6 +214,8 @@
                 }
                 this.x += this.dirX * this.speed;
                 this.y += this.dirY * this.speed;
+                
+                // Teleporte lateral (Pac-Man e Fantasma)
                 if (this.x < -TILE_SIZE / 2) this.x = (GRID_W - 1) * TILE_SIZE;
                 else if (this.x > (GRID_W - 0.5) * TILE_SIZE) this.x = 0;
             }
@@ -264,7 +279,6 @@
 
                 try {
                     const matchesRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'matches');
-                    // Regra 2: Busca simples
                     const snap = await getDocs(matchesRef);
                     let availableMatch = null;
 
@@ -275,11 +289,8 @@
                         }
                     });
 
-                    if (availableMatch) {
-                        await this.joinMatch(availableMatch.id);
-                    } else {
-                        await this.createMatch();
-                    }
+                    if (availableMatch) await this.joinMatch(availableMatch.id);
+                    else await this.createMatch();
                 } catch (e) {
                     console.error(e);
                     document.getElementById('status-desc').innerText = "Erro ao conectar.";
@@ -303,14 +314,12 @@
                 });
 
                 this.setupListener(mDoc);
-                document.getElementById('status-desc').innerText = "Sala criada. Aguardando oponente entrar...";
+                document.getElementById('status-desc').innerText = "Aguardando oponente entrar...";
             }
 
             async joinMatch(id) {
                 this.matchId = id;
                 const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', id);
-                
-                // MUDANÇA: Sorteio aleatório de quem é quem
                 const p1IsPacman = Math.random() > 0.5;
                 this.role = p1IsPacman ? 'ghost' : 'pacman';
 
@@ -330,7 +339,6 @@
                     if (!s.exists()) return;
                     const d = s.data();
 
-                    // Define papel do P1 se ele ainda não sabe
                     if (this.role === null && d.status === 'playing') {
                         this.role = (d.player1 === this.user.uid) ? d.p1Role : d.p2Role;
                         this.showBadge();
@@ -341,11 +349,26 @@
                     
                     if (d.status !== 'playing' || !this.pacman || !this.ghost) return;
 
-                    // Sincronização
+                    // CORREÇÃO: Lógica Anti-Slide no Teletransporte
+                    const applyPosition = (entity, targetGX, targetGY) => {
+                        const targetX = targetGX * TILE_SIZE;
+                        const targetY = targetGY * TILE_SIZE;
+                        const dist = Math.hypot(entity.x - targetX, entity.y - targetY);
+                        
+                        if (dist > TILE_SIZE * 3) {
+                            // Se a distância for muito grande, teletransporta instantaneamente
+                            entity.x = targetX;
+                            entity.y = targetY;
+                        }
+                        entity.targetX = targetX;
+                        entity.targetY = targetY;
+                    };
+
                     if (this.role === 'pacman' && d.ghostPos) {
-                        this.ghost.targetX = d.ghostPos.gx * TILE_SIZE; this.ghost.targetY = d.ghostPos.gy * TILE_SIZE;
+                        applyPosition(this.ghost, d.ghostPos.gx, d.ghostPos.gy);
                     } else if (this.role === 'ghost' && d.pacPos) {
-                        this.pacman.targetX = d.pacPos.gx * TILE_SIZE; this.pacman.targetY = d.pacPos.gy * TILE_SIZE;
+                        applyPosition(this.pacman, d.pacPos.gx, d.pacPos.gy);
+                        
                         d.dotsEaten.forEach(idx => {
                             const y = Math.floor(idx / GRID_W), x = idx % GRID_W;
                             if (this.map[y][x] === 0) { this.map[y][x] = 2; this.dots--; }
@@ -359,7 +382,7 @@
             showBadge() {
                 const b = document.getElementById('role-badge');
                 b.style.display = 'inline-block';
-                b.innerText = this.role === 'pacman' ? 'ÉS O PAC-MAN' : 'ÉS O FANTASMA';
+                b.innerText = this.role === 'pacman' ? 'VOCÊ É O PAC-MAN' : 'VOCÊ É O FANTASMA';
                 b.style.background = this.role === 'pacman' ? 'var(--pac-yellow)' : 'var(--ghost-red)';
                 b.style.color = this.role === 'pacman' ? '#000' : '#fff';
             }
@@ -375,12 +398,12 @@
                 for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
                 
                 this.pacman = new Player(7, 9, "#ffff00", 2.5);
-                this.ghost = new Player(7, 3, "#ff0000", 2.2); 
+                this.ghost = new Player(7, 3, "#ff0000", 2.5); // Velocidades iguais e divisoras de TILE_SIZE
                 this.loop();
             }
 
             async sync() {
-                if (!this.matchId || Date.now() - this.lastSync < 90 || this.ended) return;
+                if (!this.matchId || Date.now() - this.lastSync < 80 || this.ended) return;
                 this.lastSync = Date.now();
                 const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
                 try {
@@ -397,7 +420,7 @@
                     } else {
                         await updateDoc(mDoc, { ghostPos: { gx: this.ghost.getGridX(), gy: this.ghost.getGridY() } });
                         const dist = Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y);
-                        if (dist < TILE_SIZE * 0.75) await updateDoc(mDoc, { status: 'ended', winner: 'ghost' });
+                        if (dist < TILE_SIZE * 0.7) await updateDoc(mDoc, { status: 'ended', winner: 'ghost' });
                     }
                 } catch(e) {}
             }
@@ -421,12 +444,12 @@
                 if (!this.pacman || !this.ghost || this.ended) return;
                 if (this.role === 'pacman') {
                     this.pacman.updateLocal();
-                    this.ghost.x += (this.ghost.targetX - this.ghost.x) * 0.2;
-                    this.ghost.y += (this.ghost.targetY - this.ghost.y) * 0.2;
+                    this.ghost.x += (this.ghost.targetX - this.ghost.x) * 0.3;
+                    this.ghost.y += (this.ghost.targetY - this.ghost.y) * 0.3;
                 } else {
                     this.ghost.updateLocal();
-                    this.pacman.x += (this.pacman.targetX - this.pacman.x) * 0.2;
-                    this.pacman.y += (this.pacman.targetY - this.pacman.y) * 0.2;
+                    this.pacman.x += (this.pacman.targetX - this.pacman.x) * 0.3;
+                    this.pacman.y += (this.pacman.targetY - this.pacman.y) * 0.3;
                 }
                 this.sync();
             }
