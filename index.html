@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pac-Man PvP - Stats & Leaderboard Estável</title>
+    <title>Pac-Man PvP - Layout & Leaderboard Corrigidos</title>
     <style>
         :root {
             --neon-blue: #1919a6;
@@ -44,78 +44,126 @@
             color: var(--pac-yellow);
         }
 
+        /* MODAL DE INTERFACE REESTRUTURADO */
         #overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95);
+            background: rgba(0,0,0,0.9);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             z-index: 100;
-            text-align: center;
             padding: 20px;
             box-sizing: border-box;
+        }
+
+        .menu-card {
+            background: #111;
+            border: 2px solid var(--neon-blue);
+            border-radius: 12px;
+            padding: 25px;
+            width: 100%;
+            max-width: 380px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 0 25px rgba(25, 25, 166, 0.4);
+            min-height: 300px;
         }
 
         .btn {
             background: var(--neon-blue);
             color: white;
             border: none;
-            padding: 14px 28px;
-            font-size: 18px;
+            padding: 14px;
+            font-size: 16px;
             cursor: pointer;
-            border-radius: 4px;
+            border-radius: 6px;
             text-transform: uppercase;
             font-weight: bold;
             transition: all 0.2s;
-            margin: 5px;
+            width: 100%;
+            margin-top: 10px;
         }
 
-        .btn:hover:not(:disabled) { background: #2a2abf; transform: scale(1.05); }
+        .btn:hover:not(:disabled) { background: #2a2abf; transform: scale(1.02); }
         .btn:disabled { background: #444; cursor: not-allowed; opacity: 0.6; }
 
         input {
             padding: 12px;
-            font-size: 18px;
-            border-radius: 4px;
+            font-size: 16px;
+            border-radius: 6px;
             border: 2px solid var(--neon-blue);
-            background: #111;
+            background: #000;
             color: white;
-            margin-bottom: 15px;
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 10px;
             text-align: center;
             outline: none;
         }
 
+        #role-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            margin-bottom: 15px;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        /* TABELA DE RANKING CORRIGIDA */
         #leaderboard-panel {
             width: 100%;
-            max-height: 220px;
+            max-height: 160px;
             overflow-y: auto;
             margin: 15px 0;
-            background: #111;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 14px;
+            background: #000;
+            border: 1px solid #222;
+            border-radius: 4px;
         }
-        table { width: 100%; border-collapse: collapse; }
-        th { color: var(--neon-blue); border-bottom: 1px solid #333; padding: 5px; }
-        td { padding: 8px 5px; border-bottom: 1px solid #222; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { 
+            color: var(--neon-blue); 
+            border-bottom: 1px solid #333; 
+            padding: 8px; 
+            position: sticky; 
+            top: 0; 
+            background: #080808; 
+            text-align: center;
+        }
+        td { padding: 6px 4px; border-bottom: 1px solid #111; text-align: center; }
 
         #my-stats {
-            font-size: 12px;
-            color: #888;
-            margin-top: 10px;
+            font-size: 11px;
+            color: #777;
+            margin-top: 8px;
+            background: rgba(255,255,255,0.03);
+            padding: 8px;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* TELA DE ESPERA ORGANIZADA */
+        #matchmaking-view {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            padding: 20px 0;
         }
 
         .loader {
-            border: 4px solid #f3f3f3;
+            border: 4px solid #222;
             border-top: 4px solid var(--neon-blue);
             border-radius: 50%;
-            width: 30px;
-            height: 30px;
+            width: 32px; height: 32px;
             animation: spin 1s linear infinite;
-            display: none;
-            margin: 10px;
         }
 
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -132,35 +180,42 @@
         <canvas id="gameCanvas"></canvas>
         
         <div id="overlay">
-            <div id="role-badge" style="padding: 8px 20px; border-radius: 20px; font-size: 14px; margin-bottom: 15px; display: none; font-weight: bold; text-transform: uppercase;"></div>
-            <h1 id="status-title" style="color: var(--pac-yellow); margin: 0 0 10px 0; font-size: 28px;">MULTIPAC PVP</h1>
-            
-            <div id="setup-view">
-                <input type="text" id="nickname-input" placeholder="Teu Nickname" maxlength="12">
-                <br>
-                <button class="btn" onclick="game.saveNickname()">ENTRAR NO JOGO</button>
-            </div>
-
-            <div id="menu-view" style="display: none;">
-                <p id="welcome-msg" style="margin: 0 0 10px 0; color: #fff;"></p>
-                <button id="start-btn" class="btn" onclick="game.startMatchmaking()">PROCURAR PARTIDA</button>
+            <div class="menu-card">
+                <!-- Badge de papel (aparece apenas no resultado ou jogo) -->
+                <div id="role-badge" style="display: none;"></div>
                 
-                <div id="leaderboard-panel">
-                    <table>
-                        <thead>
-                            <tr><th>#</th><th>NOME</th><th>PAC W/L</th><th>GHOST W/L</th></tr>
-                        </thead>
-                        <tbody id="leaderboard-body"></tbody>
-                    </table>
+                <h1 id="status-title" style="color: var(--pac-yellow); margin: 0 0 15px 0; font-size: 22px; text-transform: uppercase;">PAC-MAN PvP</h1>
+                
+                <!-- ESTADO 1: LOGIN -->
+                <div id="setup-view" style="width: 100%;">
+                    <p style="font-size: 13px; color: #888; margin-bottom: 10px;">Introduz o teu nome para começar:</p>
+                    <input type="text" id="nickname-input" placeholder="Teu Nickname" maxlength="12">
+                    <button class="btn" id="entry-btn" onclick="game.saveNickname()">ENTRAR NO JOGO</button>
                 </div>
 
-                <div id="my-stats">A carregar estatísticas...</div>
-            </div>
+                <!-- ESTADO 2: MENU E RANKING -->
+                <div id="menu-view" style="display: none; width: 100%;">
+                    <p id="welcome-msg" style="margin: 0; color: #fff; font-weight: bold; text-align: center; font-size: 14px;"></p>
+                    
+                    <div id="leaderboard-panel">
+                        <table>
+                            <thead>
+                                <tr><th>#</th><th>JOGADOR</th><th>PAC</th><th>GHOST</th></tr>
+                            </thead>
+                            <tbody id="leaderboard-body"></tbody>
+                        </table>
+                    </div>
 
-            <div id="matchmaking-view" style="display: none;">
-                <p id="status-desc">A procurar rivais...</p>
-                <div id="match-loader" class="loader" style="display: inline-block;"></div>
-                <div id="matchmaking-timer">Aguardando: <span id="timer-val">5</span>s</div>
+                    <div id="my-stats"></div>
+                    <button id="start-btn" class="btn" onclick="game.startMatchmaking()">PROCURAR PARTIDA</button>
+                </div>
+
+                <!-- ESTADO 3: ESPERA (MATCHMAKING) -->
+                <div id="matchmaking-view" style="width: 100%;">
+                    <div class="loader"></div>
+                    <p id="status-desc" style="font-size: 14px; margin: 0; color: #ddd; font-weight: bold;">A procurar oponente...</p>
+                    <div style="font-size: 12px; color: #00ffff; letter-spacing: 1px;">TEMPO: <span id="timer-val">5</span>s</div>
+                </div>
             </div>
         </div>
     </div>
@@ -168,7 +223,7 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
-        import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, getDocs, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+        import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         const firebaseConfig = {
             apiKey: "AIzaSyAUALVvZohsOibF3HI3PIIPorhkM4oRwlA",
@@ -199,60 +254,40 @@
 
         class Entity {
             constructor(gx, gy, color, speed) {
-                this.x = gx * TILE_SIZE; 
-                this.y = gy * TILE_SIZE;
-                this.color = color; 
-                this.speed = speed;
+                this.x = gx * TILE_SIZE; this.y = gy * TILE_SIZE;
+                this.color = color; this.speed = speed;
                 this.dirX = 0; this.dirY = 0;
                 this.nextDirX = 0; this.nextDirY = 0;
                 this.radius = TILE_SIZE / 2 - 6; 
             }
-
             getGridX() { return Math.round(this.x / TILE_SIZE); }
             getGridY() { return Math.round(this.y / TILE_SIZE); }
-            
             isAtJunction() {
-                const centerX = this.getGridX() * TILE_SIZE;
-                const centerY = this.getGridY() * TILE_SIZE;
-                const dist = Math.hypot(this.x - centerX, this.y - centerY);
-                const near = dist < this.speed;
-                if (near) {
-                    this.x = centerX;
-                    this.y = centerY;
-                }
+                const cx = this.getGridX() * TILE_SIZE, cy = this.getGridY() * TILE_SIZE;
+                const near = Math.hypot(this.x - cx, this.y - cy) < this.speed;
+                if (near) { this.x = cx; this.y = cy; }
                 return near;
             }
-
             canMove(dx, dy) {
                 if (dx === 0 && dy === 0) return true;
-                const gx = this.getGridX();
-                const gy = this.getGridY();
-                const nx = gx + dx;
-                const ny = gy + dy;
-                // Túnel na linha 5 permite movimento fora dos limites do grid horizontal
+                const gx = this.getGridX(), gy = this.getGridY(), nx = gx + dx, ny = gy + dy;
                 if (ny === 5 && (nx < 0 || nx >= GRID_W)) return true;
                 if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H) return false;
                 return FIXED_MAP[ny][nx] !== 1;
             }
-
             handleTeleport() {
-                const mapWidth = GRID_W * TILE_SIZE;
-                if (this.x < -TILE_SIZE / 2) this.x = mapWidth - TILE_SIZE / 2;
-                else if (this.x > mapWidth - TILE_SIZE / 2) this.x = -TILE_SIZE / 2;
+                const w = GRID_W * TILE_SIZE;
+                if (this.x < -TILE_SIZE / 2) this.x = w - TILE_SIZE / 2;
+                else if (this.x > w - TILE_SIZE / 2) this.x = -TILE_SIZE / 2;
             }
         }
 
         class Player extends Entity {
             updateLocal() {
-                // Se estiver literalmente atravessando o teletransporte, bloqueia viragens verticais
                 const isWrapping = (this.getGridY() === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
-
                 if (!isWrapping && this.isAtJunction()) {
-                    if (this.canMove(this.nextDirX, this.nextDirY)) {
-                        this.dirX = this.nextDirX; this.dirY = this.nextDirY;
-                    } else if (!this.canMove(this.dirX, this.dirY)) {
-                        this.dirX = 0; this.dirY = 0;
-                    }
+                    if (this.canMove(this.nextDirX, this.nextDirY)) { this.dirX = this.nextDirX; this.dirY = this.nextDirY; }
+                    else if (!this.canMove(this.dirX, this.dirY)) { this.dirX = 0; this.dirY = 0; }
                     if (game.role === 'pacman') {
                         let gx = this.getGridX(), gy = this.getGridY();
                         if(game.map[gy] && game.map[gy][gx] === 0) {
@@ -261,286 +296,197 @@
                         }
                     }
                 }
-                this.x += this.dirX * this.speed;
-                this.y += this.dirY * this.speed;
+                this.x += this.dirX * this.speed; this.y += this.dirY * this.speed;
                 this.handleTeleport();
             }
-
-            // Garante que o Bot respeite os eixos e não trave por indecisão
             applyBotMovement() {
-                if (this.dirX !== 0) this.dirY = 0;
-                if (this.dirY !== 0) this.dirX = 0;
-                
-                // Se estiver atravessando o túnel, força a direção horizontal para evitar loop
-                if (this.getGridY() === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE)) {
-                    this.dirY = 0;
-                }
-
-                if (this.isAtJunction() && !this.canMove(this.dirX, this.dirY)) {
-                    this.dirX = 0; this.dirY = 0;
-                }
-                this.x += this.dirX * this.speed;
-                this.y += this.dirY * this.speed;
+                if (this.dirX !== 0) this.dirY = 0; else if (this.dirY !== 0) this.dirX = 0;
+                if (this.getGridY() === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE)) this.dirY = 0;
+                if (this.isAtJunction() && !this.canMove(this.dirX, this.dirY)) { this.dirX = 0; this.dirY = 0; }
+                this.x += this.dirX * this.speed; this.y += this.dirY * this.speed;
                 this.handleTeleport();
             }
-
             getSmartDist(x1, x2, y1, y2) {
                 let dx = Math.abs(x1 - x2);
-                const gy1 = Math.round(y1 / TILE_SIZE);
-                // Inteligência: Só usa a distância toroidal (curta) se estiver na linha do túnel
-                if (gy1 === 5) {
-                    const mapWidth = GRID_W * TILE_SIZE;
-                    if (dx > mapWidth / 2) dx = mapWidth - dx;
-                }
-                const dy = Math.abs(y1 - y2);
-                return Math.sqrt(dx*dx + dy*dy);
+                if (Math.round(y1 / TILE_SIZE) === 5) { const w = GRID_W * TILE_SIZE; if (dx > w / 2) dx = w - dx; }
+                return Math.sqrt(dx*dx + Math.pow(y1-y2, 2));
             }
-
             updateGhostAI(target) {
-                if (!target) return;
-                const gx = this.getGridX(), gy = this.getGridY();
-                // IA bloqueada durante o teletransporte para evitar mudar de ideia e ficar preso
-                const isWrapping = (gy === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
-
-                if (!isWrapping && this.isAtJunction()) {
-                    const dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
-                    let bestDir = null; let minDist = Infinity;
-
+                if (!target || (this.getGridY() === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE))) { this.applyBotMovement(); return; }
+                if (this.isAtJunction()) {
+                    const gx = this.getGridX(), gy = this.getGridY(), dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
+                    let bestDir = null, minDist = Infinity;
                     dirs.forEach(d => {
                         if (d.x === -this.dirX && d.y === -this.dirY && (this.dirX !== 0 || this.dirY !== 0)) return;
                         if (this.canMove(d.x, d.y)) {
-                            const dX = (gx + d.x) * TILE_SIZE, dY = (gy + d.y) * TILE_SIZE;
-                            let dist = this.getSmartDist(dX, target.x, dY, target.y);
-                            
-                            // Inércia: prefere manter a direção atual se as distâncias forem parecidas
+                            let dist = this.getSmartDist((gx + d.x) * TILE_SIZE, target.x, (gy + d.y) * TILE_SIZE, target.y);
                             if (d.x === this.dirX && d.y === this.dirY) dist -= 5;
-
                             if (dist < minDist) { minDist = dist; bestDir = d; }
                         }
                     });
-
                     if (bestDir) { this.dirX = bestDir.x; this.dirY = bestDir.y; }
-                    else {
-                        const fallback = dirs.find(d => this.canMove(d.x, d.y));
-                        if(fallback) { this.dirX = fallback.x; this.dirY = fallback.y; }
-                    }
+                    else { const fb = dirs.find(d => this.canMove(d.x, d.y)); if(fb) { this.dirX = fb.x; this.dirY = fb.y; } }
                 }
                 this.applyBotMovement();
             }
-
             updatePacmanAI(danger) {
-                if (!danger) return;
-                const gx = this.getGridX(), gy = this.getGridY();
-                const isWrapping = (gy === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
-
-                if (!isWrapping && this.isAtJunction()) {
-                    const dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
-                    let bestDir = null; let maxScore = -Infinity;
-
+                if (!danger || (this.getGridY() === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE))) { this.applyBotMovement(); return; }
+                if (this.isAtJunction()) {
+                    const gx = this.getGridX(), gy = this.getGridY(), dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
+                    let bestDir = null, maxScore = -Infinity;
                     dirs.forEach(d => {
                         if (this.canMove(d.x, d.y)) {
                             const nx = gx + d.x, ny = gy + d.y;
-                            const distToGhost = this.getSmartDist(nx * TILE_SIZE, danger.x, ny * TILE_SIZE, danger.y);
+                            const dist = this.getSmartDist(nx * TILE_SIZE, danger.x, ny * TILE_SIZE, danger.y);
                             const hasDot = (ny >= 0 && ny < GRID_H && nx >= 0 && nx < GRID_W) && game.map[ny][nx] === 0;
-                            
-                            let score = distToGhost + (hasDot ? (game.dots < 5 ? 5000 : 1500) : 0);
+                            let score = dist + (hasDot ? (game.dots < 5 ? 5000 : 1500) : 0);
                             if (d.x === this.dirX && d.y === this.dirY) score += 300;
-
                             if (score > maxScore) { maxScore = score; bestDir = d; }
                         }
                     });
-
                     if (bestDir) { this.dirX = bestDir.x; this.dirY = bestDir.y; }
-                    else {
-                        const force = dirs.find(d => this.canMove(d.x, d.y));
-                        if(force) { this.dirX = force.x; this.dirY = force.y; }
-                    }
+                    else { const f = dirs.find(d => this.canMove(d.x, d.y)); if(f) { this.dirX = f.x; this.dirY = f.y; } }
                 }
-
                 const cgx = this.getGridX(), cgy = this.getGridY();
                 if(cgy >= 0 && cgy < GRID_H && cgx >= 0 && cgx < GRID_W && game.map[cgy][cgx] === 0) {
-                    game.map[cgy][cgx] = 2; game.dots--; game.score += 10;
-                    document.getElementById('score').innerText = game.score;
+                    game.map[cgy][cgx] = 2; game.dots--; game.score += 10; document.getElementById('score').innerText = game.score;
                 }
                 this.applyBotMovement();
             }
-
             draw(ctx) {
                 ctx.fillStyle = this.color; ctx.beginPath();
-                let rot = 0;
-                if (this.dirX === 1) rot = 0; else if (this.dirX === -1) rot = Math.PI;
-                else if (this.dirY === 1) rot = Math.PI/2; else if (this.dirY === -1) rot = -Math.PI/2;
-                ctx.moveTo(this.x + TILE_SIZE/2, this.y + TILE_SIZE/2);
-                ctx.arc(this.x + TILE_SIZE/2, this.y + TILE_SIZE/2, this.radius, rot + 0.2*Math.PI, rot + 1.8*Math.PI);
-                ctx.fill();
+                let rot = 0; if (this.dirX === 1) rot = 0; else if (this.dirX === -1) rot = Math.PI; else if (this.dirY === 1) rot = Math.PI/2; else if (this.dirY === -1) rot = -Math.PI/2;
+                ctx.moveTo(this.x + TILE_SIZE/2, this.y + TILE_SIZE/2); ctx.arc(this.x + TILE_SIZE/2, this.y + TILE_SIZE/2, this.radius, rot + 0.2*Math.PI, rot + 1.8*Math.PI); ctx.fill();
             }
-
             drawGhost(ctx) {
-                ctx.fillStyle = this.color;
-                const cx = this.x + TILE_SIZE/2, cy = this.y + TILE_SIZE/2;
-                ctx.beginPath(); ctx.arc(cx, cy, this.radius, Math.PI, 0);
-                ctx.lineTo(cx + this.radius, cy + this.radius - 2);
-                ctx.lineTo(cx - this.radius, cy + this.radius - 2);
-                ctx.fill();
-                ctx.fillStyle = "#fff"; ctx.beginPath();
-                ctx.arc(cx - 4, cy - 2, 3, 0, Math.PI*2); ctx.arc(cx + 4, cy - 2, 3, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = this.color; const cx = this.x + TILE_SIZE/2, cy = this.y + TILE_SIZE/2;
+                ctx.beginPath(); ctx.arc(cx, cy, this.radius, Math.PI, 0); ctx.lineTo(cx + this.radius, cy + this.radius - 2); ctx.lineTo(cx - this.radius, cy + this.radius - 2); ctx.fill();
+                ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(cx - 4, cy - 2, 3, 0, Math.PI*2); ctx.arc(cx + 4, cy - 2, 3, 0, Math.PI*2); ctx.fill();
             }
         }
 
         class Game {
             constructor() {
-                this.canvas = document.getElementById('gameCanvas');
-                this.ctx = this.canvas.getContext('2d');
+                this.canvas = document.getElementById('gameCanvas'); this.ctx = this.canvas.getContext('2d');
                 this.canvas.width = GRID_W * TILE_SIZE; this.canvas.height = GRID_H * TILE_SIZE;
-                this.map = []; this.pacman = null; this.ghost = null;
-                this.dots = 0; this.score = 0; this.user = null;
-                this.matchId = null; this.role = null; this.appId = "multipac-v2"; 
+                this.map = []; this.pacman = null; this.ghost = null; this.dots = 0; this.score = 0; this.user = null;
+                this.matchId = null; this.role = null; this.appId = "multipac-v4"; // RESET V4
                 this.ended = true; this.isBotMatch = false;
                 this.stats = { pacWins:0, pacLoss:0, ghostWins:0, ghostLoss:0, nickname: "" };
             }
-
             async init() {
-                const app = initializeApp(firebaseConfig);
-                this.auth = getAuth(app);
-                this.db = initializeFirestore(app, { localCache: memoryLocalCache() });
+                const app = initializeApp(firebaseConfig); this.auth = getAuth(app); this.db = initializeFirestore(app, { localCache: memoryLocalCache() });
                 await signInAnonymously(this.auth);
-                onAuthStateChanged(this.auth, async (u) => {
-                    if (u) {
-                        this.user = u;
-                        await this.loadProfile();
-                        this.refreshLeaderboard();
-                    }
-                });
+                onAuthStateChanged(this.auth, async (u) => { if (u) { this.user = u; await this.loadProfile(); this.refreshLeaderboard(); } });
+                this.switchView('setup');
             }
-
             async loadProfile() {
                 const sRef = doc(this.db, 'artifacts', this.appId, 'users', this.user.uid, 'profile', 'stats');
                 const sSnap = await getDoc(sRef);
                 if (sSnap.exists()) {
                     this.stats = { ...this.stats, ...sSnap.data() };
-                    document.getElementById('setup-view').style.display = 'none';
-                    document.getElementById('menu-view').style.display = 'block';
+                    this.switchView('menu');
                     this.updateUIProfile();
                 }
             }
-
             async saveNickname() {
                 const nick = document.getElementById('nickname-input').value.trim();
                 if (nick.length < 2) return;
-                this.stats.nickname = nick;
+                document.getElementById('entry-btn').disabled = true;
+                const nickKey = nick.toLowerCase();
+                const lRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'leaderboard', nickKey);
+                const lSnap = await getDoc(lRef);
+                if (lSnap.exists()) {
+                    const d = lSnap.data();
+                    this.stats = { pacWins: d.pacWins||0, pacLoss: d.pacLoss||0, ghostWins: d.ghostWins||0, ghostLoss: d.ghostLoss||0, nickname: d.nickname };
+                } else { this.stats.nickname = nick; }
                 const sRef = doc(this.db, 'artifacts', this.appId, 'users', this.user.uid, 'profile', 'stats');
                 await setDoc(sRef, this.stats);
-                document.getElementById('setup-view').style.display = 'none';
-                document.getElementById('menu-view').style.display = 'block';
-                this.updateUIProfile();
-                this.updatePublicLeaderboard();
+                this.switchView('menu');
+                this.updateUIProfile(); await this.updatePublicLeaderboard(); this.refreshLeaderboard();
             }
-
             updateUIProfile() {
                 document.getElementById('welcome-msg').innerText = `OLÁ, ${this.stats.nickname.toUpperCase()}!`;
-                document.getElementById('my-stats').innerHTML = `<b>PAC-MAN:</b> ${this.stats.pacWins}V - ${this.stats.pacLoss}D | <b>GHOST:</b> ${this.stats.ghostWins}V - ${this.stats.ghostLoss}D`;
+                document.getElementById('my-stats').innerHTML = `<b>PAC:</b> ${this.stats.pacWins}V-${this.stats.pacLoss}D | <b>GHOST:</b> ${this.stats.ghostWins}V-${this.stats.ghostLoss}D`;
             }
-
             async refreshLeaderboard() {
                 const lRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'leaderboard');
                 const snap = await getDocs(lRef);
                 let list = []; snap.forEach(d => list.push(d.data()));
                 list.sort((a,b) => (b.pacWins+b.ghostWins) - (a.pacWins+a.ghostWins));
                 const body = document.getElementById('leaderboard-body');
-                body.innerHTML = list.slice(0, 10).map((u, i) => `<tr><td>${i+1}</td><td style="color:${u.nickname === this.stats.nickname ? '#00ff00' : '#fff'}">${u.nickname}</td><td>${u.pacWins}/${u.pacLoss}</td><td>${u.ghostWins}/${u.ghostLoss}</td></tr>`).join('');
+                body.innerHTML = list.slice(0, 10).map((u, i) => `<tr><td>${i+1}</td><td style="color:${u.nickname.toLowerCase() === this.stats.nickname.toLowerCase() ? '#00ff00' : '#fff'}">${u.nickname}</td><td>${u.pacWins}/${u.pacLoss}</td><td>${u.ghostWins}/${u.ghostLoss}</td></tr>`).join('');
             }
-
             async updatePublicLeaderboard() {
-                const lRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'leaderboard', this.user.uid);
+                if (!this.stats.nickname) return;
+                const lRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'leaderboard', this.stats.nickname.toLowerCase());
                 await setDoc(lRef, { nickname: this.stats.nickname, pacWins: this.stats.pacWins, pacLoss: this.stats.pacLoss, ghostWins: this.stats.ghostWins, ghostLoss: this.stats.ghostLoss, updatedAt: serverTimestamp() });
             }
-
+            switchView(view) {
+                document.getElementById('setup-view').style.display = view === 'setup' ? 'block' : 'none';
+                document.getElementById('menu-view').style.display = view === 'menu' ? 'block' : 'none';
+                document.getElementById('matchmaking-view').style.display = view === 'matchmaking' ? 'flex' : 'none';
+                document.getElementById('role-badge').style.display = (view === 'game' || view === 'result') ? 'block' : 'none';
+            }
             async startMatchmaking() {
-                document.getElementById('menu-view').style.display = 'none';
-                document.getElementById('matchmaking-view').style.display = 'block';
-                let timeLeft = 5;
-                document.getElementById('timer-val').innerText = timeLeft;
+                this.switchView('matchmaking');
+                let timeLeft = 5; document.getElementById('timer-val').innerText = timeLeft;
                 const timer = setInterval(() => {
                     timeLeft--; document.getElementById('timer-val').innerText = timeLeft;
                     if (timeLeft <= 0) { clearInterval(timer); this.startBotMatch(); }
                 }, 1000);
             }
-
             startBotMatch() {
-                this.isBotMatch = true;
-                this.role = Math.random() > 0.5 ? 'pacman' : 'ghost';
+                this.isBotMatch = true; this.role = Math.random() > 0.5 ? 'pacman' : 'ghost';
                 this.map = JSON.parse(JSON.stringify(FIXED_MAP));
                 this.dots = 0; for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
-                this.pacman = new Player(7, 9, "#ffff00", 3.0);
-                this.ghost = new Player(7, 3, "#ff0000", 2.5);
-                if (this.role === 'pacman') { this.ghost.dirX = -1; this.ghost.dirY = 0; }
-                else { this.pacman.dirX = 1; this.pacman.dirY = 0; }
+                this.pacman = new Player(7, 9, "#ffff00", 3.0); this.ghost = new Player(7, 3, "#ff0000", 2.5);
+                if (this.role === 'pacman') { this.ghost.dirX = -1; } else { this.pacman.dirX = 1; }
                 this.startEngine();
             }
-
             startEngine() {
-                document.getElementById('overlay').style.display = 'none';
-                this.ended = false; this.score = 0;
+                document.getElementById('overlay').style.display = 'none'; this.ended = false; this.score = 0;
                 document.getElementById('match-status').innerText = this.role.toUpperCase();
-                const b = document.getElementById('role-badge'); b.style.display = 'inline-block';
+                const b = document.getElementById('role-badge'); b.style.display = 'block';
                 b.innerText = this.role === 'pacman' ? 'ÉS O PAC-MAN' : 'ÉS O FANTASMA';
                 b.style.background = this.role === 'pacman' ? 'var(--pac-yellow)' : 'var(--ghost-red)';
                 b.style.color = this.role === 'pacman' ? '#000' : '#fff';
                 this.loop();
             }
-
             async endEngine(winner) {
-                if (this.ended) return;
-                this.ended = true; const win = (this.role === winner);
+                if (this.ended) return; this.ended = true; const win = (this.role === winner);
                 if (this.role === 'pacman') { if (win) this.stats.pacWins++; else this.stats.pacLoss++; }
                 else { if (win) this.stats.ghostWins++; else this.stats.ghostLoss++; }
                 const sRef = doc(this.db, 'artifacts', this.appId, 'users', this.user.uid, 'profile', 'stats');
                 await setDoc(sRef, this.stats); await this.updatePublicLeaderboard();
                 document.getElementById('overlay').style.display = 'flex';
+                this.switchView('menu');
                 document.getElementById('status-title').innerText = win ? "VITÓRIA!" : "DERROTA";
                 document.getElementById('status-title').style.color = win ? "#00ff00" : "#ff0000";
-                document.getElementById('menu-view').style.display = 'block';
-                document.getElementById('matchmaking-view').style.display = 'none';
-                this.updateUIProfile(); this.refreshLeaderboard();
-                this.pacman = null; this.ghost = null;
+                document.getElementById('start-btn').innerText = "JOGAR NOVAMENTE";
+                this.updateUIProfile(); this.refreshLeaderboard(); this.pacman = null; this.ghost = null;
             }
-
             update() {
                 if (this.ended || !this.pacman || !this.ghost) return;
-                if (this.role === 'pacman') {
-                    this.pacman.updateLocal();
-                    this.ghost.updateGhostAI(this.pacman);
-                } else {
-                    this.ghost.updateLocal();
-                    this.pacman.updatePacmanAI(this.ghost);
-                }
+                if (this.role === 'pacman') { this.pacman.updateLocal(); this.ghost.updateGhostAI(this.pacman); }
+                else { this.ghost.updateLocal(); this.pacman.updatePacmanAI(this.ghost); }
                 if (this.dots <= 0) this.endEngine('pacman');
                 if (Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y) < TILE_SIZE * 0.75) this.endEngine('ghost');
             }
-
             draw() {
                 this.ctx.fillStyle = "#000"; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
                 for(let y=0; y<GRID_H; y++) {
                     for(let x=0; x<GRID_W; x++) {
                         const tx = x * TILE_SIZE, ty = y * TILE_SIZE;
-                        if(FIXED_MAP[y][x] === 1) { 
-                            this.ctx.strokeStyle = "#1919a6"; this.ctx.lineWidth = 2;
-                            this.ctx.strokeRect(tx+4, ty+4, TILE_SIZE-8, TILE_SIZE-8);
-                        } else if(this.map[y][x] === 0) { 
-                            this.ctx.fillStyle = "#ffb8ae"; this.ctx.beginPath();
-                            this.ctx.arc(tx+TILE_SIZE/2, ty+TILE_SIZE/2, 2, 0, Math.PI*2); this.ctx.fill();
-                        }
+                        if(FIXED_MAP[y][x] === 1) { this.ctx.strokeStyle = "#1919a6"; this.ctx.lineWidth = 2; this.ctx.strokeRect(tx+4, ty+4, TILE_SIZE-8, TILE_SIZE-8); }
+                        else if(this.map[y][x] === 0) { this.ctx.fillStyle = "#ffb8ae"; this.ctx.beginPath(); this.ctx.arc(tx+TILE_SIZE/2, ty+TILE_SIZE/2, 2, 0, Math.PI*2); this.ctx.fill(); }
                     }
                 }
-                if (this.pacman) this.pacman.draw(this.ctx);
-                if (this.ghost) this.ghost.drawGhost(this.ctx);
+                if (this.pacman) this.pacman.draw(this.ctx); if (this.ghost) this.ghost.drawGhost(this.ctx);
             }
-
             loop() { if (this.ended) return; this.update(); this.draw(); requestAnimationFrame(() => this.loop()); }
         }
-
         const game = new Game(); window.game = game; game.init();
-
         window.addEventListener('keydown', e => {
             if(!game.pacman || !game.ghost || game.ended) return;
             const t = (game.role === 'pacman') ? game.pacman : game.ghost;
