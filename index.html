@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pac-Man PvP - Versão Final Estável</title>
+    <title>Pac-Man PvP - Stats & Leaderboard Estável</title>
     <style>
         :root {
             --neon-blue: #1919a6;
@@ -55,36 +55,58 @@
             z-index: 100;
             text-align: center;
             padding: 20px;
+            box-sizing: border-box;
         }
 
         .btn {
             background: var(--neon-blue);
             color: white;
             border: none;
-            padding: 16px 32px;
-            font-size: 20px;
+            padding: 14px 28px;
+            font-size: 18px;
             cursor: pointer;
             border-radius: 4px;
             text-transform: uppercase;
             font-weight: bold;
             transition: all 0.2s;
+            margin: 5px;
         }
 
         .btn:hover:not(:disabled) { background: #2a2abf; transform: scale(1.05); }
         .btn:disabled { background: #444; cursor: not-allowed; opacity: 0.6; }
 
-        #role-badge {
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-size: 14px;
+        input {
+            padding: 12px;
+            font-size: 18px;
+            border-radius: 4px;
+            border: 2px solid var(--neon-blue);
+            background: #111;
+            color: white;
             margin-bottom: 15px;
-            display: none;
-            font-weight: bold;
+            text-align: center;
+            outline: none;
         }
 
-        #status-desc { margin: 15px 0; color: #aaa; }
-        #matchmaking-timer { color: #00ffff; font-weight: bold; font-size: 18px; margin-top: 10px; }
-        
+        #leaderboard-panel {
+            width: 100%;
+            max-height: 220px;
+            overflow-y: auto;
+            margin: 15px 0;
+            background: #111;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 14px;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th { color: var(--neon-blue); border-bottom: 1px solid #333; padding: 5px; }
+        td { padding: 8px 5px; border-bottom: 1px solid #222; }
+
+        #my-stats {
+            font-size: 12px;
+            color: #888;
+            margin-top: 10px;
+        }
+
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid var(--neon-blue);
@@ -93,7 +115,7 @@
             height: 30px;
             animation: spin 1s linear infinite;
             display: none;
-            margin-top: 10px;
+            margin: 10px;
         }
 
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -110,23 +132,42 @@
         <canvas id="gameCanvas"></canvas>
         
         <div id="overlay">
-            <div id="role-badge"></div>
-            <h1 id="status-title" style="color: var(--pac-yellow); margin: 0; font-size: 32px;">PAC-MAN PVP</h1>
-            <p id="status-desc">Conectando ao servidor...</p>
+            <div id="role-badge" style="padding: 8px 20px; border-radius: 20px; font-size: 14px; margin-bottom: 15px; display: none; font-weight: bold; text-transform: uppercase;"></div>
+            <h1 id="status-title" style="color: var(--pac-yellow); margin: 0 0 10px 0; font-size: 28px;">MULTIPAC PVP</h1>
             
-            <button id="start-btn" class="btn" onclick="game.startMatchmaking()" disabled>PROCURAR PARTIDA</button>
-            <div id="match-loader" class="loader"></div>
-            <div id="matchmaking-timer" style="display: none;">Aguardando oponente: <span id="timer-val">5</span>s</div>
+            <div id="setup-view">
+                <input type="text" id="nickname-input" placeholder="Teu Nickname" maxlength="12">
+                <br>
+                <button class="btn" onclick="game.saveNickname()">ENTRAR NO JOGO</button>
+            </div>
 
-            <div style="margin-top: 30px; font-size: 10px; color: #444;">
-                ID SESSÃO: <span id="session-id">...</span>
+            <div id="menu-view" style="display: none;">
+                <p id="welcome-msg" style="margin: 0 0 10px 0; color: #fff;"></p>
+                <button id="start-btn" class="btn" onclick="game.startMatchmaking()">PROCURAR PARTIDA</button>
+                
+                <div id="leaderboard-panel">
+                    <table>
+                        <thead>
+                            <tr><th>#</th><th>NOME</th><th>PAC W/L</th><th>GHOST W/L</th></tr>
+                        </thead>
+                        <tbody id="leaderboard-body"></tbody>
+                    </table>
+                </div>
+
+                <div id="my-stats">A carregar estatísticas...</div>
+            </div>
+
+            <div id="matchmaking-view" style="display: none;">
+                <p id="status-desc">A procurar rivais...</p>
+                <div id="match-loader" class="loader" style="display: inline-block;"></div>
+                <div id="matchmaking-timer">Aguardando: <span id="timer-val">5</span>s</div>
             </div>
         </div>
     </div>
 
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { initializeFirestore, memoryLocalCache, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, getDocs, serverTimestamp, deleteDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
         const firebaseConfig = {
@@ -156,8 +197,6 @@
             [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
         ];
 
-        const SESSION_ID = "p_" + Math.random().toString(36).substring(2, 7);
-
         class Entity {
             constructor(gx, gy, color, speed) {
                 this.x = gx * TILE_SIZE; 
@@ -177,7 +216,7 @@
                 const centerY = this.getGridY() * TILE_SIZE;
                 const dist = Math.hypot(this.x - centerX, this.y - centerY);
                 const near = dist < this.speed;
-                if (near) { // SNAP: Alinha perfeitamente ao centro para decisões
+                if (near) {
                     this.x = centerX;
                     this.y = centerY;
                 }
@@ -190,8 +229,9 @@
                 const gy = this.getGridY();
                 const nx = gx + dx;
                 const ny = gy + dy;
-                if (nx < 0 || nx >= GRID_W) return gy === 5; 
-                if (ny < 0 || ny >= GRID_H) return false;
+                // Túnel na linha 5 permite movimento fora dos limites do grid horizontal
+                if (ny === 5 && (nx < 0 || nx >= GRID_W)) return true;
+                if (nx < 0 || nx >= GRID_W || ny < 0 || ny >= GRID_H) return false;
                 return FIXED_MAP[ny][nx] !== 1;
             }
 
@@ -204,13 +244,15 @@
 
         class Player extends Entity {
             updateLocal() {
-                if (this.isAtJunction()) {
+                // Se estiver literalmente atravessando o teletransporte, bloqueia viragens verticais
+                const isWrapping = (this.getGridY() === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
+
+                if (!isWrapping && this.isAtJunction()) {
                     if (this.canMove(this.nextDirX, this.nextDirY)) {
                         this.dirX = this.nextDirX; this.dirY = this.nextDirY;
                     } else if (!this.canMove(this.dirX, this.dirY)) {
                         this.dirX = 0; this.dirY = 0;
                     }
-
                     if (game.role === 'pacman') {
                         let gx = this.getGridX(), gy = this.getGridY();
                         if(game.map[gy] && game.map[gy][gx] === 0) {
@@ -224,16 +266,19 @@
                 this.handleTeleport();
             }
 
-            // Garante que o Bot respeite a física sem parar em locais errados
+            // Garante que o Bot respeite os eixos e não trave por indecisão
             applyBotMovement() {
                 if (this.dirX !== 0) this.dirY = 0;
                 if (this.dirY !== 0) this.dirX = 0;
                 
-                // Só pára se realmente bater numa parede num cruzamento
+                // Se estiver atravessando o túnel, força a direção horizontal para evitar loop
+                if (this.getGridY() === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE)) {
+                    this.dirY = 0;
+                }
+
                 if (this.isAtJunction() && !this.canMove(this.dirX, this.dirY)) {
                     this.dirX = 0; this.dirY = 0;
                 }
-
                 this.x += this.dirX * this.speed;
                 this.y += this.dirY * this.speed;
                 this.handleTeleport();
@@ -241,8 +286,12 @@
 
             getSmartDist(x1, x2, y1, y2) {
                 let dx = Math.abs(x1 - x2);
-                const mapWidth = GRID_W * TILE_SIZE;
-                if (dx > mapWidth / 2) dx = mapWidth - dx;
+                const gy1 = Math.round(y1 / TILE_SIZE);
+                // Inteligência: Só usa a distância toroidal (curta) se estiver na linha do túnel
+                if (gy1 === 5) {
+                    const mapWidth = GRID_W * TILE_SIZE;
+                    if (dx > mapWidth / 2) dx = mapWidth - dx;
+                }
                 const dy = Math.abs(y1 - y2);
                 return Math.sqrt(dx*dx + dy*dy);
             }
@@ -250,18 +299,22 @@
             updateGhostAI(target) {
                 if (!target) return;
                 const gx = this.getGridX(), gy = this.getGridY();
-                const inTunnelWrap = (gy === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
+                // IA bloqueada durante o teletransporte para evitar mudar de ideia e ficar preso
+                const isWrapping = (gy === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
 
-                if (!inTunnelWrap && this.isAtJunction()) {
+                if (!isWrapping && this.isAtJunction()) {
                     const dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
-                    let bestDir = null;
-                    let minDist = Infinity;
+                    let bestDir = null; let minDist = Infinity;
 
                     dirs.forEach(d => {
-                        if (d.x === -this.dirX && d.y === -this.dirY && this.dirX !== 0) return;
+                        if (d.x === -this.dirX && d.y === -this.dirY && (this.dirX !== 0 || this.dirY !== 0)) return;
                         if (this.canMove(d.x, d.y)) {
                             const dX = (gx + d.x) * TILE_SIZE, dY = (gy + d.y) * TILE_SIZE;
-                            const dist = this.getSmartDist(dX, target.x, dY, target.y);
+                            let dist = this.getSmartDist(dX, target.x, dY, target.y);
+                            
+                            // Inércia: prefere manter a direção atual se as distâncias forem parecidas
+                            if (d.x === this.dirX && d.y === this.dirY) dist -= 5;
+
                             if (dist < minDist) { minDist = dist; bestDir = d; }
                         }
                     });
@@ -278,12 +331,11 @@
             updatePacmanAI(danger) {
                 if (!danger) return;
                 const gx = this.getGridX(), gy = this.getGridY();
-                const inTunnelWrap = (gy === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
+                const isWrapping = (gy === 5 && (this.x < 0 || this.x > (GRID_W - 1) * TILE_SIZE));
 
-                if (!inTunnelWrap && this.isAtJunction()) {
+                if (!isWrapping && this.isAtJunction()) {
                     const dirs = [{x:1, y:0}, {x:-1, y:0}, {x:0, y:1}, {x:0, y:-1}];
-                    let bestDir = null;
-                    let maxScore = -Infinity;
+                    let bestDir = null; let maxScore = -Infinity;
 
                     dirs.forEach(d => {
                         if (this.canMove(d.x, d.y)) {
@@ -291,8 +343,7 @@
                             const distToGhost = this.getSmartDist(nx * TILE_SIZE, danger.x, ny * TILE_SIZE, danger.y);
                             const hasDot = (ny >= 0 && ny < GRID_H && nx >= 0 && nx < GRID_W) && game.map[ny][nx] === 0;
                             
-                            let score = distToGhost;
-                            if (hasDot) score += (game.dots < 5 ? 5000 : 1500);
+                            let score = distToGhost + (hasDot ? (game.dots < 5 ? 5000 : 1500) : 0);
                             if (d.x === this.dirX && d.y === this.dirY) score += 300;
 
                             if (score > maxScore) { maxScore = score; bestDir = d; }
@@ -340,203 +391,131 @@
             constructor() {
                 this.canvas = document.getElementById('gameCanvas');
                 this.ctx = this.canvas.getContext('2d');
-                this.canvas.width = GRID_W * TILE_SIZE;
-                this.canvas.height = GRID_H * TILE_SIZE;
+                this.canvas.width = GRID_W * TILE_SIZE; this.canvas.height = GRID_H * TILE_SIZE;
                 this.map = []; this.pacman = null; this.ghost = null;
                 this.dots = 0; this.score = 0; this.user = null;
-                this.matchId = null; this.role = null;
-                this.matchUnsub = null; this.lastSync = 0;
-                this.db = null; this.appId = "multipac-v2"; 
-                this.ended = false;
-                this.isBotMatch = false;
-                this.matchmakingTimer = null;
+                this.matchId = null; this.role = null; this.appId = "multipac-v2"; 
+                this.ended = true; this.isBotMatch = false;
+                this.stats = { pacWins:0, pacLoss:0, ghostWins:0, ghostLoss:0, nickname: "" };
             }
 
             async init() {
-                try {
-                    const firebaseApp = initializeApp(firebaseConfig);
-                    const auth = getAuth(firebaseApp);
-                    this.db = initializeFirestore(firebaseApp, { localCache: memoryLocalCache() });
-                    await signInAnonymously(auth);
-                    onAuthStateChanged(auth, (u) => {
-                        if (u) {
-                            this.user = u;
-                            document.getElementById('session-id').innerText = SESSION_ID;
-                            document.getElementById('start-btn').disabled = false;
-                            document.getElementById('status-desc').innerText = "Servidor pronto.";
-                        }
-                    });
-                } catch (e) { console.error(e); }
+                const app = initializeApp(firebaseConfig);
+                this.auth = getAuth(app);
+                this.db = initializeFirestore(app, { localCache: memoryLocalCache() });
+                await signInAnonymously(this.auth);
+                onAuthStateChanged(this.auth, async (u) => {
+                    if (u) {
+                        this.user = u;
+                        await this.loadProfile();
+                        this.refreshLeaderboard();
+                    }
+                });
+            }
+
+            async loadProfile() {
+                const sRef = doc(this.db, 'artifacts', this.appId, 'users', this.user.uid, 'profile', 'stats');
+                const sSnap = await getDoc(sRef);
+                if (sSnap.exists()) {
+                    this.stats = { ...this.stats, ...sSnap.data() };
+                    document.getElementById('setup-view').style.display = 'none';
+                    document.getElementById('menu-view').style.display = 'block';
+                    this.updateUIProfile();
+                }
+            }
+
+            async saveNickname() {
+                const nick = document.getElementById('nickname-input').value.trim();
+                if (nick.length < 2) return;
+                this.stats.nickname = nick;
+                const sRef = doc(this.db, 'artifacts', this.appId, 'users', this.user.uid, 'profile', 'stats');
+                await setDoc(sRef, this.stats);
+                document.getElementById('setup-view').style.display = 'none';
+                document.getElementById('menu-view').style.display = 'block';
+                this.updateUIProfile();
+                this.updatePublicLeaderboard();
+            }
+
+            updateUIProfile() {
+                document.getElementById('welcome-msg').innerText = `OLÁ, ${this.stats.nickname.toUpperCase()}!`;
+                document.getElementById('my-stats').innerHTML = `<b>PAC-MAN:</b> ${this.stats.pacWins}V - ${this.stats.pacLoss}D | <b>GHOST:</b> ${this.stats.ghostWins}V - ${this.stats.ghostLoss}D`;
+            }
+
+            async refreshLeaderboard() {
+                const lRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'leaderboard');
+                const snap = await getDocs(lRef);
+                let list = []; snap.forEach(d => list.push(d.data()));
+                list.sort((a,b) => (b.pacWins+b.ghostWins) - (a.pacWins+a.ghostWins));
+                const body = document.getElementById('leaderboard-body');
+                body.innerHTML = list.slice(0, 10).map((u, i) => `<tr><td>${i+1}</td><td style="color:${u.nickname === this.stats.nickname ? '#00ff00' : '#fff'}">${u.nickname}</td><td>${u.pacWins}/${u.pacLoss}</td><td>${u.ghostWins}/${u.ghostLoss}</td></tr>`).join('');
+            }
+
+            async updatePublicLeaderboard() {
+                const lRef = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'leaderboard', this.user.uid);
+                await setDoc(lRef, { nickname: this.stats.nickname, pacWins: this.stats.pacWins, pacLoss: this.stats.pacLoss, ghostWins: this.stats.ghostWins, ghostLoss: this.stats.ghostLoss, updatedAt: serverTimestamp() });
             }
 
             async startMatchmaking() {
-                document.getElementById('start-btn').disabled = true;
-                document.getElementById('match-loader').style.display = 'block';
-                document.getElementById('matchmaking-timer').style.display = 'block';
-                document.getElementById('status-desc').innerText = "Procurando oponente...";
-                this.ended = false; this.isBotMatch = false;
+                document.getElementById('menu-view').style.display = 'none';
+                document.getElementById('matchmaking-view').style.display = 'block';
                 let timeLeft = 5;
                 document.getElementById('timer-val').innerText = timeLeft;
-                this.matchmakingTimer = setInterval(() => {
+                const timer = setInterval(() => {
                     timeLeft--; document.getElementById('timer-val').innerText = timeLeft;
-                    if (timeLeft <= 0) { clearInterval(this.matchmakingTimer); this.startBotMatch(); }
+                    if (timeLeft <= 0) { clearInterval(timer); this.startBotMatch(); }
                 }, 1000);
-
-                try {
-                    const matchesRef = collection(this.db, 'artifacts', this.appId, 'public', 'data', 'matches');
-                    const snap = await getDocs(matchesRef);
-                    let availableMatch = null;
-                    snap.forEach(d => {
-                        const data = d.data();
-                        if (data.status === 'waiting' && data.player1 !== this.user.uid) availableMatch = { id: d.id, ...data };
-                    });
-                    if (availableMatch) { clearInterval(this.matchmakingTimer); await this.joinMatch(availableMatch.id); }
-                    else await this.createMatch();
-                } catch (e) { console.error(e); }
             }
 
-            async startBotMatch() {
-                if (this.matchUnsub) this.matchUnsub();
-                if (this.matchId) {
-                    const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
-                    await deleteDoc(mDoc).catch(()=>{});
-                }
-                this.isBotMatch = true; this.matchId = null;
+            startBotMatch() {
+                this.isBotMatch = true;
                 this.role = Math.random() > 0.5 ? 'pacman' : 'ghost';
-                
                 this.map = JSON.parse(JSON.stringify(FIXED_MAP));
-                this.dots = 0;
-                for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
-                
+                this.dots = 0; for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
                 this.pacman = new Player(7, 9, "#ffff00", 3.0);
-                this.ghost = new Player(7, 3, "#ff0000", 2.5); 
-                
-                if (this.role === 'pacman') { this.ghost.dirX = -1; this.ghost.dirY = 0; } 
+                this.ghost = new Player(7, 3, "#ff0000", 2.5);
+                if (this.role === 'pacman') { this.ghost.dirX = -1; this.ghost.dirY = 0; }
                 else { this.pacman.dirX = 1; this.pacman.dirY = 0; }
-
-                this.showBadge();
                 this.startEngine();
-            }
-
-            async createMatch() {
-                this.matchId = "match_" + Math.random().toString(36).substring(2, 9);
-                const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
-                await setDoc(mDoc, {
-                    player1: this.user.uid, player2: null, status: 'waiting',
-                    createdAt: serverTimestamp(), pacPos: { gx: 7, gy: 9 },
-                    ghostPos: { gx: 7, gy: 3 }, dotsEaten: [], score: 0
-                });
-                this.setupListener(mDoc);
-            }
-
-            async joinMatch(id) {
-                this.matchId = id;
-                const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', id);
-                this.role = 'ghost';
-                await updateDoc(mDoc, { player2: this.user.uid, status: 'playing' });
-                this.setupListener(mDoc);
-            }
-
-            setupListener(mDoc) {
-                if (this.matchUnsub) this.matchUnsub();
-                this.matchUnsub = onSnapshot(mDoc, (s) => {
-                    if (!s.exists()) return;
-                    const d = s.data();
-                    if (d.status === 'playing' && !this.pacman) {
-                        this.role = (d.player1 === this.user.uid) ? 'pacman' : 'ghost';
-                        this.startEngine();
-                    }
-                    if (d.status === 'ended' && !this.ended) this.endEngine(d.winner);
-                    if (d.status !== 'playing' || !this.pacman || !this.ghost || this.isBotMatch) return;
-
-                    if (this.role === 'pacman' && d.ghostPos) {
-                        this.ghost.x += (d.ghostPos.gx * TILE_SIZE - this.ghost.x) * 0.3;
-                        this.ghost.y += (d.ghostPos.gy * TILE_SIZE - this.ghost.y) * 0.3;
-                    } else if (this.role === 'ghost' && d.pacPos) {
-                        this.pacman.x += (d.pacPos.gx * TILE_SIZE - this.pacman.x) * 0.3;
-                        this.pacman.y += (d.pacPos.gy * TILE_SIZE - this.pacman.y) * 0.3;
-                        d.dotsEaten.forEach(idx => {
-                            const y = Math.floor(idx / GRID_W), x = idx % GRID_W;
-                            if (this.map[y][x] === 0) { this.map[y][x] = 2; this.dots--; }
-                        });
-                        this.score = d.score; document.getElementById('score').innerText = this.score;
-                    }
-                }, () => {});
-            }
-
-            showBadge() {
-                const b = document.getElementById('role-badge'); b.style.display = 'inline-block';
-                b.innerText = (this.role === 'pacman' ? 'ÉS O PAC-MAN' : 'ÉS O FANTASMA') + (this.isBotMatch ? " (BOT)" : "");
-                b.style.background = this.role === 'pacman' ? 'var(--pac-yellow)' : 'var(--ghost-red)';
-                b.style.color = this.role === 'pacman' ? '#000' : '#fff';
             }
 
             startEngine() {
                 document.getElementById('overlay').style.display = 'none';
-                document.getElementById('match-loader').style.display = 'none';
-                document.getElementById('matchmaking-timer').style.display = 'none';
-                document.getElementById('match-status').innerText = this.isBotMatch ? "MODO TREINO" : "LIVE PVP";
-                document.getElementById('match-status').style.color = "#00ff00";
-                
-                if (!this.pacman) {
-                    this.map = JSON.parse(JSON.stringify(FIXED_MAP));
-                    this.dots = 0;
-                    for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if(this.map[y][x] === 0) this.dots++;
-                    this.pacman = new Player(7, 9, "#ffff00", 3.0);
-                    this.ghost = new Player(7, 3, "#ff0000", 2.5);
-                }
+                this.ended = false; this.score = 0;
+                document.getElementById('match-status').innerText = this.role.toUpperCase();
+                const b = document.getElementById('role-badge'); b.style.display = 'inline-block';
+                b.innerText = this.role === 'pacman' ? 'ÉS O PAC-MAN' : 'ÉS O FANTASMA';
+                b.style.background = this.role === 'pacman' ? 'var(--pac-yellow)' : 'var(--ghost-red)';
+                b.style.color = this.role === 'pacman' ? '#000' : '#fff';
                 this.loop();
-            }
-
-            async sync() {
-                if (!this.pacman || !this.ghost || this.ended) return;
-                if (this.isBotMatch) {
-                    if (this.dots <= 0) this.endEngine('pacman');
-                    const dist = Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y);
-                    if (dist < TILE_SIZE * 0.75) this.endEngine('ghost');
-                    return;
-                }
-                if (!this.matchId || Date.now() - this.lastSync < 80) return;
-                this.lastSync = Date.now();
-                const mDoc = doc(this.db, 'artifacts', this.appId, 'public', 'data', 'matches', this.matchId);
-                try {
-                    if (this.role === 'pacman') {
-                        const eaten = [];
-                        for(let y=0; y<GRID_H; y++) for(let x=0; x<GRID_W; x++) if (this.map[y][x] === 2 && FIXED_MAP[y][x] === 0) eaten.push(y * GRID_W + x);
-                        await updateDoc(mDoc, { pacPos: { gx: this.pacman.getGridX(), gy: this.pacman.getGridY() }, dotsEaten: eaten, score: this.score });
-                        if (this.dots <= 0) await updateDoc(mDoc, { status: 'ended', winner: 'pacman' });
-                    } else {
-                        await updateDoc(mDoc, { ghostPos: { gx: this.ghost.getGridX(), gy: this.ghost.getGridY() } });
-                        const dist = Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y);
-                        if (dist < TILE_SIZE * 0.75) await updateDoc(mDoc, { status: 'ended', winner: 'ghost' });
-                    }
-                } catch(e) {}
             }
 
             async endEngine(winner) {
                 if (this.ended) return;
-                this.ended = true; const isWin = (this.role === winner);
+                this.ended = true; const win = (this.role === winner);
+                if (this.role === 'pacman') { if (win) this.stats.pacWins++; else this.stats.pacLoss++; }
+                else { if (win) this.stats.ghostWins++; else this.stats.ghostLoss++; }
+                const sRef = doc(this.db, 'artifacts', this.appId, 'users', this.user.uid, 'profile', 'stats');
+                await setDoc(sRef, this.stats); await this.updatePublicLeaderboard();
                 document.getElementById('overlay').style.display = 'flex';
-                document.getElementById('status-title').innerText = isWin ? "VITÓRIA!" : "DERROTA";
-                document.getElementById('status-title').style.color = isWin ? "#00ff00" : "#ff0000";
-                document.getElementById('status-desc').innerText = winner === 'pacman' ? "Mapa limpo!" : "Capturado!";
-                document.getElementById('start-btn').disabled = false;
-                document.getElementById('start-btn').innerText = "JOGAR NOVAMENTE";
-                document.getElementById('match-status').innerText = "FIM";
-                if (this.matchUnsub) this.matchUnsub();
-                this.matchId = null; this.pacman = null; this.ghost = null;
+                document.getElementById('status-title').innerText = win ? "VITÓRIA!" : "DERROTA";
+                document.getElementById('status-title').style.color = win ? "#00ff00" : "#ff0000";
+                document.getElementById('menu-view').style.display = 'block';
+                document.getElementById('matchmaking-view').style.display = 'none';
+                this.updateUIProfile(); this.refreshLeaderboard();
+                this.pacman = null; this.ghost = null;
             }
 
             update() {
-                if (!this.pacman || !this.ghost || this.ended) return;
+                if (this.ended || !this.pacman || !this.ghost) return;
                 if (this.role === 'pacman') {
                     this.pacman.updateLocal();
-                    if (this.isBotMatch) this.ghost.updateGhostAI(this.pacman);
+                    this.ghost.updateGhostAI(this.pacman);
                 } else {
                     this.ghost.updateLocal();
-                    if (this.isBotMatch) this.pacman.updatePacmanAI(this.ghost);
+                    this.pacman.updatePacmanAI(this.ghost);
                 }
-                this.sync();
+                if (this.dots <= 0) this.endEngine('pacman');
+                if (Math.hypot(this.pacman.x - this.ghost.x, this.pacman.y - this.ghost.y) < TILE_SIZE * 0.75) this.endEngine('ghost');
             }
 
             draw() {
